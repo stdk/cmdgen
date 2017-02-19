@@ -9,7 +9,7 @@ setup(name='cmdgen',
       author='Victor Yarmola',
       author_email='std.feanor@gmail.com',
       url='https://github.com/stdk/cmdgen',
-      requires=['ply'],
+      install_requires=['ply>=3.10'],
       packages=['cmdgen'],
       scripts=['scripts/cmdgen'],
       classifiers=[
