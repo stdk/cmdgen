@@ -1,0 +1,6 @@
+$mode = {ipv4|ipv6}; (** mode definition **)
+$conf = {normal|broken}; (* ///(* conf **))/\)\ definition **)
+$key_args = [mode $mode] [conf $conf]; (**** multi
+line
+ comment  *****)
+cmd $key_args
