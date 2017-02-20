@@ -4,8 +4,8 @@ import itertools
 
 DEBUG=False
 
-tokens = ('NODE','NUMBER')
-literals = ('|','{','}','[',']','$','=',';','~','.','+')
+tokens = ('NODE','PUNCTUATION')
+literals = ('|','{','}','[',']','$','~','+','=',';')
 states = (
     ('comment','exclusive'),
 )
@@ -37,23 +37,19 @@ def t_comment_end(t):
     t.lexer.pop_state()
 
 @debug_lexer
-def t_comment_skip1(t):
+def t_comment_skip_unimportant(t):
     r'[^(*\n]+'
 
 @debug_lexer
-def t_comment_skip2(t):
+def t_comment_skip_false_end(t):
     r'\*+[^)*\n]'
 
 @debug_lexer
-def t_comment_skip3(t):
+def t_comment_skip_false_begin(t):
     r'\(+[^*\n]'
 
-t_NODE       = r'[/a-zA-Z_][/a-zA-Z0-9_-]*'
-
-def t_NUMBER(t):
-    r'-?\d+'
-    t.value = int(t.value)
-    return t
+t_NODE        = r'[\/a-zA-Z0-9_-][\/a-zA-Z0-9_-]*'
+t_PUNCTUATION = r'[.,:]+'
 
 # Ignored characters
 t_ignore = ' \t'
@@ -180,8 +176,15 @@ class Variable(object):
         return environment[self.name]
 
 class Range(object):
+    @staticmethod
+    def to_int(s):
+        try:
+            return int(s)
+        except ValueError:
+            return 0
+
     def __init__(self,start,end):
-        self.start,self.end = sorted((start,end))
+        self.start,self.end = sorted((Range.to_int(start),Range.to_int(end)))
 
     def __str__(self):
         return '%d~%d' % (self.start,self.end)
@@ -207,6 +210,8 @@ class NodeOptions(object):
         return sum([i.get_options(environment) for i in self.contents],[])
     
 class NodeSequence(object):
+    space = Node(' ',primitive=True)
+
     def __init__(self,contents,separator=None):        
         self.contents = contents
         if separator is None:
@@ -215,6 +220,7 @@ class NodeSequence(object):
     
     def append(self,*elements):
         self.contents += elements
+        return self
     
     def __str__(self):
         return self.separator.join([str(i) for i in self.contents])
@@ -228,16 +234,6 @@ class NodeSequence(object):
                     for i in itertools.product(*options)]
         else:
             return options[0]
-
-class DottedList(object):
-    def __init__(self,contents):
-        self.contents = contents
-
-    def append(self,*element):
-        self.contents += elements
-
-    def __str__(self):
-        return '.'.join()
 
 def p_program(p):
     'program : definition_list command'
@@ -267,32 +263,25 @@ def p_command(p):
 def p_node_sequence_single(p):
     'node_sequence : node'
     p[0] = NodeSequence([p[1]])
-    
-def p_node_sequence_follow(p):
+
+def p_node_sequence_normal(p):
     'node_sequence : node_sequence node'
-    p[1].append(Node(' ',primitive=True),p[2])
-    p[0] = p[1]
+    p[0] = p[1].append(p[1].space,p[2])
 
 def p_node_sequence_concat(p):
     'node_sequence : node_sequence "+" node'
-    p[1].append(p[3])
-    p[0] = p[1]
+    p[0] = p[1].append(p[3])
 
-def p_node_sequence_dot(p):
-    'node_sequence : node_sequence "." node'
-    p[1].append(Node(p[2],primitive=True),p[3])
-    p[0] = p[1]
+def p_node_sequence_punctuation_join(p):
+    'node_sequence : node_sequence PUNCTUATION node'
+    p[0] = p[1].append(Node(p[2],primitive=True),p[3])
 
 def p_node_single(p):
     'node : NODE'    
     p[0] = Node(p[1],primitive=True)
 
-def p_node_number(p):
-    'node : NUMBER'    
-    p[0] = Range(p[1],p[1])
-
 def p_node_range(p):
-    'node : NUMBER "~" NUMBER'
+    'node : NODE "~" NODE'
     p[0] = Range(p[1],p[3])
 
 def p_node_variable(p):
@@ -334,8 +323,12 @@ class ExtendedLineNo(object):
         self.lineno = lineno
         self.startpos = startpos
     def process(self,token):
-        self.lineno += token.value.count('\n')
-        self.startpos = token.lexer.lexpos
+        count = token.value.count('\n')
+        if count > 0:
+            self.lineno += count
+            self.startpos = (token.lexer.lexpos 
+                             + token.value.rfind('\n') + 1
+                             - len(token.value))
     def __int__(self):
         return self.lineno
     def __str__(self):
@@ -350,9 +343,9 @@ def parse(s):
     >>> parse('test\\n{a|b|c}\\nd|e')
     Line 3 column 2 -> syntax error at '|'
     []
-    >>> parse('command test incorrec*')
-    Warning: Line 1 column 22: illegal character '*' skipped
-    ['command test incorrec']
+    >>> parse('command test !')
+    Warning: Line 1 column 14: illegal character '!' skipped
+    ['command test']
     >>> parse('test {[a} b]')
     Line 1 column 9 -> syntax error at '}'
     []
@@ -367,8 +360,8 @@ def parse(s):
     ['a d', 'a d f', 'a d g', 'a d h', 'b d', 'b d f', 'b d g', 'b d h', 'c d', 'c d f', 'c d g', 'c d h']
     >>> parse('cmd {[{a} b] c}')
     ['cmd c', 'cmd a b c']
-    >>> parse('test [x] [y] [z] test')
-    ['test test', 'test z test', 'test y test', 'test y z test', 'test x test', 'test x z test', 'test x y test', 'test x y z test']
+    >>> parse('test [x] [y] -te-st-')
+    ['test -te-st-', 'test y -te-st-', 'test x -te-st-', 'test x y -te-st-']
     >>> parse('$var = a b c ; $var')
     ['a b c']
     >>> parse('$mode = {ipv4|ipv6};\\n$conf = {normal|broken};\\n$key_args = [mode $mode] [conf $conf];\\ncmd $key_args')
@@ -377,13 +370,28 @@ def parse(s):
     ['single int 1 2 -3']
     >>> parse('int range 1~2 4~3')
     ['int range 1 3', 'int range 1 4', 'int range 2 3', 'int range 2 4']
+    >>> parse('fail range a~b')
+    ['fail range 0']
     >>> parse('ip address 192.168.19.1~3 /+{16|24}')
     ['ip address 192.168.19.1 /16', 'ip address 192.168.19.1 /24', 'ip address 192.168.19.2 /16', 'ip address 192.168.19.2 /24', 'ip address 192.168.19.3 /16', 'ip address 192.168.19.3 /24']
     >>> parse('$mode = {ipv4|ipv6}; (** mode definition **)\\n$conf = {normal|broken}; (* ///(* conf **))/\\\\)\\\\ definition **)\\n$key_args = [mode $mode] [conf $conf]; (**** multi\\nline\\n comment  *****)\\ncmd $key_args')
     ['cmd', 'cmd conf normal', 'cmd conf broken', 'cmd mode ipv4', 'cmd mode ipv4 conf normal', 'cmd mode ipv4 conf broken', 'cmd mode ipv6', 'cmd mode ipv6 conf normal', 'cmd mode ipv6 conf broken']
     >>> parse('ping server.{a|b}+{1|2}')
     ['ping server.a1', 'ping server.a2', 'ping server.b1', 'ping server.b2']
+    >>> parse('permit 00:11:22~23:33:44~45:55')
+    ['permit 00:11:22:33:44:55', 'permit 00:11:22:33:45:55', 'permit 00:11:23:33:44:55', 'permit 00:11:23:33:45:55']
+    >>> parse('punctuation,is..good,,1~3')
+    ['punctuation,is..good,,1', 'punctuation,is..good,,2', 'punctuation,is..good,,3']
     '''
+
+    # lexer.lineno = ExtendedLineNo(1,0)
+    # lexer.input(s)
+    # while True:
+    #     tok = lexer.token()
+    #     if not tok: 
+    #         break      # No more input
+    #     print(tok)
+
     try:
         lexer.lineno = ExtendedLineNo(1,0)
         program = parser.parse(s,lexer=lexer)    
