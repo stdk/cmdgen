@@ -1,86 +1,110 @@
 #!/usr/bin/python
 
 import itertools
+from preprocessor import preprocess
 
 DEBUG=False
 
-tokens = ('NODE','PUNCTUATION')
-literals = ('|','{','}','[',']','$','~','+','=',';')
-states = (
-    ('comment','exclusive'),
-)
+# states = (
+#     ('comment','exclusive'),
+#)
 
-def debug_lexer(method):
-    if DEBUG:
-        def inner(t):
-            print method.__name__,'[%s]' % (t.value,)
-            result = method(t)
-            return result
-        inner.__name__ = method.__name__
-        inner.__doc__ = method.__doc__
-        return inner
-    return method
+tokens = ('ID','NODE','NUMBER','ASSIGN','SEMICOLON','WHITESPACE')
+literals = ('|','{','}','[',']','$','~')
 
-@debug_lexer
-def t_begin_comment(t):
-    r'\(\*'
-    t.lexer.push_state('comment')
+t_ID         = r'[a-zA-Z_][a-zA-Z0-9_]*'
+t_NODE       = r'[:/+-.]+'
+t_NUMBER     = r'-?[0-9]+'
 
-@debug_lexer
-def t_comment_begin(t):
-    r'\(+\*'
-    t.lexer.push_state('comment')
+def t_ASSIGN(t):
+    r'[ \t\n]*=[ \t\n]*'
+    t.lexer.lineno.process(t)
+    return t
 
-@debug_lexer
-def t_comment_end(t):
-    r'\*+\)'
-    t.lexer.pop_state()
+def t_SEMICOLON(t):
+    r'[ \t\n]*;[ \t\n]*'
+    t.lexer.lineno.process(t)
+    return t
 
-@debug_lexer
-def t_comment_skip_unimportant(t):
-    r'[^(*\n]+'
+t_WHITESPACE = r'[ \t]+'
 
-@debug_lexer
-def t_comment_skip_false_end(t):
-    r'\*+[^)*\n]'
+t_ignore = ''
 
-@debug_lexer
-def t_comment_skip_false_begin(t):
-    r'\(+[^*\n]'
-
-t_NODE        = r'[\/a-zA-Z0-9_-][\/a-zA-Z0-9_-]*'
-t_PUNCTUATION = r'[.,:]+'
-
-# Ignored characters
-t_ignore = ' \t'
-t_comment_ignore = ''
-
-@debug_lexer
 def t_newline(t):
     r'\n+'
     t.lexer.lineno.process(t)
-
-@debug_lexer
-def t_comment_newline(t):
-    r'\n+'
-    t.lexer.lineno.process(t)
-
-#class LexicalError(Exception):
-#    def __init__(self,t):
-#        msg = "Illegal character '%s'" % t.value[0]
-#        super(self.__class__,self).__init__(msg)
+    t.type = 'WHITESPACE'
+    return t
 
 def t_error(t):
     args = (t.lineno.lineno,t.lexpos - t.lineno.startpos + 1,t.value[0])
     print "Warning: Line %d column %d: illegal character '%s' skipped" % args
-    t.lexer.skip(1)
+    t.lexer.skip(1)    
 
-def t_comment_error(t):
-    print 'Error in comment',t
+import ply.lex as lex
+
+class ExtendedLineNo(object):
+    def __init__(self,lineno,startpos):
+        self.lineno = lineno
+        self.startpos = startpos
+    def process(self,token):
+        count = token.value.count('\n')
+        if count > 0:
+            self.lineno += count
+            self.startpos = (token.lexer.lexpos 
+                             + token.value.rfind('\n') + 1
+                             - len(token.value))
+    def __int__(self):
+        return self.lineno
+    def __str__(self):
+        return str((self.lineno,self.startpos))
+
+class CustomLexer(object):
+    def __init__(self,lexer):
+        self.lexer = lexer
+        self.token_gen = None
+
+    def generator(self,get_token):
+        initial_state = True
+        whitespace_before = False
+
+        while True:
+            token = get_token()
+
+            if token is None:
+                yield None
+                break
+
+            is_whitespace = token.type == 'WHITESPACE'
+
+            if initial_state:
+                if is_whitespace:
+                    continue
+                else:
+                    initial_state = False
+            
+            if whitespace_before:
+                if is_whitespace:
+                    continue
+                else:
+                    whitespace_before = False
+
+            if is_whitespace:
+                whitespace_before = True                    
+
+            yield token
+
+
+    def input(self,s):
+        self.lexer.lineno = ExtendedLineNo(1,0)
+        self.token_gen = self.generator(self.lexer.token)
+        return self.lexer.input(s)
+
+    def token(self):
+        return self.token_gen.next()
 
 # Build the lexer
-import ply.lex as lex
-lexer = lex.lex()
+lexer = CustomLexer(lex.lex())
 
 def debug_available(method):
     if DEBUG:
@@ -102,8 +126,7 @@ class Program(object):
     __repr__ = __str__
 
     @debug_available
-    def get_options(self):
-        
+    def get_options(self):        
         return self.command.get_options(self.environment)
 
 class DefinitionList(object):
@@ -221,6 +244,11 @@ class NodeSequence(object):
     def append(self,*elements):
         self.contents += elements
         return self
+
+    def append_whitespace(self):
+        if self.contents[-1] != self.space:
+            self.contents.append(self.space)
+        return self
     
     def __str__(self):
         return self.separator.join([str(i) for i in self.contents])
@@ -253,7 +281,7 @@ def p_definition_list(p):
     p[0] = p[1]
 
 def p_definition(p):
-    'definition : "$" NODE "=" node_sequence ";"'
+    'definition : "$" ID ASSIGN node_sequence SEMICOLON'
     p[0] = Definition(p[2],p[4])
 
 def p_command(p):
@@ -264,28 +292,44 @@ def p_node_sequence_single(p):
     'node_sequence : node'
     p[0] = NodeSequence([p[1]])
 
+def p_node_sequence_single_whitespace(p):
+    'node_sequence : whitespace_list'
+    p[0] = NodeSequence([NodeSequence.space])
+
 def p_node_sequence_normal(p):
     'node_sequence : node_sequence node'
-    p[0] = p[1].append(p[1].space,p[2])
+    p[0] = p[1].append(p[2])
 
-def p_node_sequence_concat(p):
-    'node_sequence : node_sequence "+" node'
-    p[0] = p[1].append(p[3])
+def p_node_sequence_whitespace(p):
+    'node_sequence : node_sequence whitespace_list'
+    p[0] = p[1].append_whitespace()
 
-def p_node_sequence_punctuation_join(p):
-    'node_sequence : node_sequence PUNCTUATION node'
-    p[0] = p[1].append(Node(p[2],primitive=True),p[3])
+def p_whitespace_list_single(p):
+    'whitespace_list : WHITESPACE'
+    p[0] = Node(' ',primitive=True)
 
-def p_node_single(p):
-    'node : NODE'    
+def p_whitespace_list(p):
+    'whitespace_list : whitespace_list WHITESPACE'
+    p[0] = p[1]
+
+def p_node_id(p):
+    'node : ID'    
+    p[0] = Node(p[1],primitive=True)
+
+def p_node_node(p):
+    'node : NODE'
+    p[0] = Node(p[1],primitive=True)
+
+def p_node_number(p):
+    'node : NUMBER'    
     p[0] = Node(p[1],primitive=True)
 
 def p_node_range(p):
-    'node : NODE "~" NODE'
+    'node : NUMBER "~" NUMBER'
     p[0] = Range(p[1],p[3])
 
 def p_node_variable(p):
-    'node : "$" NODE'    
+    'node : "$" ID'    
     p[0] = Variable(p[2])    
     
 def p_node_optional_group(p):
@@ -302,8 +346,7 @@ def p_node_options_single(p):
     
 def p_node_options(p):
     'node_options : node_options "|" node_sequence'
-    p[0] = p[1] + NodeOptions([p[3]])    
-
+    p[0] = p[1] + NodeOptions([p[3]])
 
 class SyntaxError(Exception):
     format = "Line %d column %d -> syntax error at '%s'"
@@ -318,25 +361,8 @@ class SyntaxError(Exception):
 def p_error(p):
     raise SyntaxError(p)
 
-class ExtendedLineNo(object):
-    def __init__(self,lineno,startpos):
-        self.lineno = lineno
-        self.startpos = startpos
-    def process(self,token):
-        count = token.value.count('\n')
-        if count > 0:
-            self.lineno += count
-            self.startpos = (token.lexer.lexpos 
-                             + token.value.rfind('\n') + 1
-                             - len(token.value))
-    def __int__(self):
-        return self.lineno
-    def __str__(self):
-        return str((self.lineno,self.startpos))    
-
 import ply.yacc as yacc
 parser = yacc.yacc()
-parser.variables = {}
 
 def parse(s):
     '''
@@ -352,7 +378,10 @@ def parse(s):
     >>> parse('a b c [1')
     Syntax error: not enough tokens to complete parsing
     []
-    >>> parse('a b c')
+    >>> parse('$a  =   test     ;\\n\\n\\n   \\n\\n    123  $ ')
+    Line 6 column 11 -> syntax error at ' '
+    []
+    >>> parse('   a   b  c ')
     ['a b c']
     >>> parse('ping {domain [a|b]|ipv6 addr|ipv4 addr}')
     ['ping domain', 'ping domain a', 'ping domain b', 'ping ipv6 addr', 'ping ipv4 addr']
@@ -362,30 +391,39 @@ def parse(s):
     ['cmd c', 'cmd a b c']
     >>> parse('test [x] [y] -te-st-')
     ['test -te-st-', 'test y -te-st-', 'test x -te-st-', 'test x y -te-st-']
-    >>> parse('$var = a b c ; $var')
+    >>> parse('$var=a b c; $var')
     ['a b c']
-    >>> parse('$mode = {ipv4|ipv6};\\n$conf = {normal|broken};\\n$key_args = [mode $mode] [conf $conf];\\ncmd $key_args')
+    >>> parse('  $mode = {ipv4|ipv6};\\n$conf = {normal|broken};\\n $key_args = [mode $mode] [conf $conf];\\ncmd $key_args')
     ['cmd', 'cmd conf normal', 'cmd conf broken', 'cmd mode ipv4', 'cmd mode ipv4 conf normal', 'cmd mode ipv4 conf broken', 'cmd mode ipv6', 'cmd mode ipv6 conf normal', 'cmd mode ipv6 conf broken']
     >>> parse('single int 1 2 -3')
     ['single int 1 2 -3']
     >>> parse('int range 1~2 4~3')
     ['int range 1 3', 'int range 1 4', 'int range 2 3', 'int range 2 4']
-    >>> parse('fail range a~b')
-    ['fail range 0']
-    >>> parse('ip address 192.168.19.1~3 /+{16|24}')
+    >>> parse('ip address 192.168.19.1~3 /{16|24}')
     ['ip address 192.168.19.1 /16', 'ip address 192.168.19.1 /24', 'ip address 192.168.19.2 /16', 'ip address 192.168.19.2 /24', 'ip address 192.168.19.3 /16', 'ip address 192.168.19.3 /24']
-    >>> parse('$mode = {ipv4|ipv6}; (** mode definition **)\\n$conf = {normal|broken}; (* ///(* conf **))/\\\\)\\\\ definition **)\\n$key_args = [mode $mode] [conf $conf]; (**** multi\\nline\\n comment  *****)\\ncmd $key_args')
+    >>> parse('$mode = {ipv4|ipv6} ; (** mode definition **) \\n $conf = {normal|broken}; (* ///(* conf **))/\\\\)\\\\ definition **)\\n$key_args=[mode $mode] [conf $conf]; (**** multi\\nline\\n comment  *****)\\ncmd $key_args')
     ['cmd', 'cmd conf normal', 'cmd conf broken', 'cmd mode ipv4', 'cmd mode ipv4 conf normal', 'cmd mode ipv4 conf broken', 'cmd mode ipv6', 'cmd mode ipv6 conf normal', 'cmd mode ipv6 conf broken']
-    >>> parse('ping server.{a|b}+{1|2}')
+    >>> parse('ping server.{a|b}{1|2}')
     ['ping server.a1', 'ping server.a2', 'ping server.b1', 'ping server.b2']
     >>> parse('permit 00:11:22~23:33:44~45:55')
     ['permit 00:11:22:33:44:55', 'permit 00:11:22:33:45:55', 'permit 00:11:23:33:44:55', 'permit 00:11:23:33:45:55']
     >>> parse('punctuation,is..good,,1~3')
     ['punctuation,is..good,,1', 'punctuation,is..good,,2', 'punctuation,is..good,,3']
+    >>> parse('delimiter{ |-|+}test')
+    ['delimiter test', 'delimiter-test', 'delimiter+test']
+    >>> parse('line\\nbreak\\nused')
+    ['line break used']
+    >>> parse(' \\n \\n $a \\n = \\n extra \\n ; \\n $a whitespaces')
+    ['extra whitespaces']
+    >>> parse(' \\n \\n $a \\n = \\n extra \\n \\n ; \\n $$a whitespaces \\n \\n with error')
+    Line 8 column 3 -> syntax error at '$'
+    []
     '''
 
+    ps = preprocess(s)
+
     # lexer.lineno = ExtendedLineNo(1,0)
-    # lexer.input(s)
+    # lexer.input(ps)
     # while True:
     #     tok = lexer.token()
     #     if not tok: 
@@ -393,8 +431,7 @@ def parse(s):
     #     print(tok)
 
     try:
-        lexer.lineno = ExtendedLineNo(1,0)
-        program = parser.parse(s,lexer=lexer)    
+        program = parser.parse(ps,lexer=lexer)
         return program.get_options()
     except SyntaxError as e:
         print e
