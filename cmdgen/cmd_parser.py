@@ -30,25 +30,13 @@ def p_node_sequence_single(p):
     'node_sequence : node'
     p[0] = NodeSequence([p[1]])
 
-def p_node_sequence_single_whitespace(p):
-    'node_sequence : whitespace_list'
-    p[0] = NodeSequence([NodeSequence.space])
-
 def p_node_sequence_normal(p):
     'node_sequence : node_sequence node'
     p[0] = p[1].append(p[2])
 
-def p_node_sequence_whitespace(p):
-    'node_sequence : node_sequence whitespace_list'
-    p[0] = p[1].append_whitespace()
-
-def p_whitespace_list_single(p):
-    'whitespace_list : WHITESPACE'
+def p_node_writespace(p):
+    'node : WHITESPACE'
     p[0] = Node(' ',primitive=True)
-
-def p_whitespace_list(p):
-    'whitespace_list : whitespace_list WHITESPACE'
-    p[0] = p[1]
 
 def p_node_id(p):
     'node : ID'    
