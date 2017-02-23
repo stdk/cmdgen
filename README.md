@@ -44,8 +44,8 @@ For integers, it is possible to avoid tedious specification of all possible opti
 ['1', '2', '3', '4', '5']
 ```
 
-Sometimes CLI commands grow extensively large. We can restrain this growth in cmdgen by
-defining variables:
+Some options of CLI commands may be used more than once or be worth enough to define them separately.
+We can handle it with variables:
 
 ```python
 >>> parse('$mode = {a|b|1~3}; set mode $mode')
