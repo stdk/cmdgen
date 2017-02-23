@@ -4,8 +4,7 @@ Command generator written in python using ply library.
 
 cmdgen provides a way to define a set of strings matching given expression with a syntax resembling many CLI command definitions. 
 
-
-This project is similar in nature to generation of a strings matching given regular expression, though with a different syntax and stricter limitations intended to better match CLI concepts.
+This project is similar in nature to the generation of strings that match given regular expression, though with a different syntax and stricter limitations intended to better match CLI concepts.
 
 In addition to basical sequencing of nodes it supports mandatory and optional nodes, options, integer ranges, variables and nested comments.
 
