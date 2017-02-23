@@ -13,7 +13,7 @@ Import
 >>> from cmdgen import parse
 ```
 
-cmdgen recognizes input string as a list of nodes and generates all string that may be derived from it.
+cmdgen recognizes input string as a list of nodes and generates all strings that may be derived from it.
 Obviously, when format string does not include any variance, cmdgen output would be no different from input:
 ```python
 >>> parse('node1 node2 node3}')
