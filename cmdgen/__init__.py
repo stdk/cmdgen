@@ -1,7 +1,10 @@
-from cmd_lexer import lexer
-from cmd_parser import parser,SyntaxError
+from .lexer import lexer
+from .parser import parser,SyntaxError
 
-def parse(s):
+def enable_debug(debug=True):
+    lexer.debug = debug
+
+def parse(s,errors=None):
     '''
     >>> parse('test\\n{a|b|c}\\nd|e')
     Line 3 column 2 -> syntax error at '|'
@@ -57,30 +60,51 @@ def parse(s):
     []
     '''
 
-    # lexer.lineno = ExtendedLineNo(1,0)
-    # lexer.input(ps)
-    # while True:
-    #     tok = lexer.token()
-    #     if not tok: 
-    #         break      # No more input
-    #     print(tok)
+    internal_errors = []
 
     try:
         program = parser.parse(s,lexer=lexer)
         return program.get_options()
     except SyntaxError as e:
-        print e
+        internal_errors.append(str(e))
+    finally:
+        internal_errors = lexer.errors + internal_errors
+
+        if errors is not None:
+            errors.extend(internal_errors)
+        else:
+            for err in internal_errors:
+                print err
 
     return []
 
-if __name__ == '__main__':
+def cli():
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == '-n':
-        for option in parse(sys.stdin.read()):
+    import argparse
+
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('-n','--no-cli',action='store_true',
+                            help='no-cli mode. read input from stdin unless file is specified')
+    arg_parser.add_argument('-f','--file',type=str,
+                            help='file mode. read input from a given file')
+    arg_parser.add_argument('-d','--debug',action='store_true',
+                            help='debug mode')
+    args = arg_parser.parse_args()
+
+    if args.debug:
+        enable_debug()
+
+    def process_input(s):
+        for option in parse(s):
             print option
+
+    if args.file is not None:
+        process_input(open(args.file).read())
+    elif args.no_cli:
+        process_input(sys.stdin.read())
     else:
         import doctest
-        doctest.testmod()
+        doctest.run_docstring_examples(parse,globals())
 
         while True:
             try:
@@ -89,5 +113,4 @@ if __name__ == '__main__':
                 break
             if not s:
                 continue
-            for option in parse(s):
-                print option    
+            process_input(s)

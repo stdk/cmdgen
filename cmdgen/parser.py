@@ -1,5 +1,5 @@
-from cmd_lexer import tokens
-from ast import *
+from .cmd_lexer import tokens
+from .ast import *
 
 def p_program(p):
     'program : definition_list command'

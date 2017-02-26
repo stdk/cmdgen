@@ -1,17 +1,4 @@
 #!/usr/bin/python
-from cmdgen import parse
-import sys
+from cmdgen import cli
 
-if len(sys.argv) > 1 and sys.argv[1] == '-n':
-    for option in parse(sys.stdin.read()):
-        print option
-else:
-    while True:
-        try:
-            s = raw_input('# ')
-        except (EOFError,KeyboardInterrupt):
-            break
-        if not s:
-            continue
-        for option in parse(s):
-            print option
+cli()

@@ -29,7 +29,7 @@ def t_newline(t):
 
 def t_error(t):
     args = (t.lineno.lineno,t.lexpos - t.lineno.startpos + 1,t.value[0])
-    print "Warning: Line %d column %d: illegal character '%s' skipped" % args
+    t.lexer.errors.append("Warning: Line %d column %d: illegal character '%s' skipped" % args)
     t.lexer.skip(1)    
 
 import ply.lex as lex
@@ -54,6 +54,8 @@ class CustomLexer(object):
     def __init__(self,lexer):
         self.lexer = lexer
         self.token_gen = None
+        self.debug = False
+        self.errors = None
 
     def generator(self,get_token):
         initial_state = True
@@ -86,8 +88,10 @@ class CustomLexer(object):
             yield token
 
 
-    def input(self,s):
+    def input(self,s):        
         self.lexer.lineno = ExtendedLineNo(1,0)
+        self.errors = []
+        self.lexer.errors = self.errors
         self.token_gen = self.generator(self.lexer.token)
 
         ps = preprocess(s)
@@ -95,6 +99,10 @@ class CustomLexer(object):
         return self.lexer.input(ps)
 
     def token(self):
-        return self.token_gen.next()
+        token = self.token_gen.next()
+        if self.debug and token is not None:
+            import sys
+            print >> sys.stderr, token
+        return token
 
 lexer = CustomLexer(lex.lex())
