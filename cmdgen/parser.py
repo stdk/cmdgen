@@ -1,4 +1,4 @@
-from .cmd_lexer import tokens
+from .lexer import tokens
 from .ast import *
 
 def p_program(p):
