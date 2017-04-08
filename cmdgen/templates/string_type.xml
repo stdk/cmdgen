@@ -1,0 +1,6 @@
+                                <String>
+                                        <Range>
+                                                <From>1</From>
+                                                <To>{{type.max_length}}</To>
+                                        </Range>
+                                </String>

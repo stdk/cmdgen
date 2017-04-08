@@ -1,11 +1,15 @@
 from preprocessor import preprocess
+from itertools import chain
 
-tokens = ('ID','NODE','NUMBER','ASSIGN','SEMICOLON','WHITESPACE')
-literals = ('|','{','}','[',']','$','~')
+tokens = ('ID','NODE','NUMBER','ASSIGN','SEMICOLON','WHITESPACE',
+          'VARIABLE_ROLE_BRACE','MANDATORY_BRACE_BEGIN','MANDATORY_BRACE_END','OPTIONAL_BRACE_BEGIN','OPTIONAL_BRACE_END')
+literals = ('|','<','>','(',')','$','~','-')
 
 t_ID         = r'[a-zA-Z_][a-zA-Z0-9_]*'
-t_NODE       = r'[:/+-.]+'
-t_NUMBER     = r'-?[0-9]+'
+t_NODE       = r'[:/+.,]+'
+t_NUMBER     = r'[0-9]+'
+
+t_VARIABLE_ROLE_BRACE = r'[\{\}\[\]]'
 
 def t_ASSIGN(t):
     r'[ \t\n]*=[ \t\n]*'
@@ -50,45 +54,97 @@ class ExtendedLineNo(object):
     def __str__(self):
         return str((self.lineno,self.startpos))
 
+class TokenIterator(object):
+    def __init__(self,get_token):
+        self.get_token = get_token
+        self.token = None
+        self.next()
+
+    def peek(self):
+        return self.token        
+
+    def next(self):
+        token = self.token
+        self.token = self.get_token()
+        return token
+
 class CustomLexer(object):
-    def __init__(self,lexer):
+    mode_braces = {
+        'new': {
+            '[': 'MANDATORY_BRACE_BEGIN',
+            ']': 'MANDATORY_BRACE_END',
+            '{': 'OPTIONAL_BRACE_BEGIN',
+            '}': 'OPTIONAL_BRACE_END',
+        },            
+        'old': {
+            '{': 'MANDATORY_BRACE_BEGIN',
+            '}': 'MANDATORY_BRACE_END',
+            '[': 'OPTIONAL_BRACE_BEGIN',
+            ']': 'OPTIONAL_BRACE_END',
+        }
+    }
+
+    def __init__(self,lexer,mode=None,verbose=False):
         self.lexer = lexer
         self.token_gen = None
-        self.debug = False
+        self.verbose = verbose
         self.errors = None
 
-    def generator(self,get_token):
-        initial_state = True
-        whitespace_before = False
+        self.mode = 'new' if mode is None else mode
+        self.token_type_for_brace = self.mode_braces[self.mode]
 
+    def clone(self,mode=None,verbose=False):
+        return CustomLexer(self.lexer.clone(),mode=mode,verbose=verbose)
+
+    def skip_whitespaces(self,token_iterator):
         while True:
-            token = get_token()
-
-            if token is None:
-                yield None
+            token = token_iterator.peek()
+            if token is None or token.type != 'WHITESPACE':
                 break
+            token_iterator.next()
 
-            is_whitespace = token.type == 'WHITESPACE'
-
-            if initial_state:
-                if is_whitespace:
-                    continue
-                else:
-                    initial_state = False
+    def normal_state(self,token_iterator):
+        while True:
+            token = token_iterator.peek()
+            if token is None:
+                break
             
-            if whitespace_before:
-                if is_whitespace:
-                    continue
-                else:
-                    whitespace_before = False
-
-            if is_whitespace:
-                whitespace_before = True
+            if token.type == 'VARIABLE_ROLE_BRACE':
+                token.type = self.token_type_for_brace[token.value]
 
             yield token
 
+            if token.type == 'WHITESPACE':
+                self.skip_whitespaces(token_iterator)
+            else:
+                token_iterator.next()
 
-    def input(self,s):        
+            if token.type == '<':
+                for t in  self.ignore_whitespace_state(token_iterator):
+                    yield t
+
+    def ignore_whitespace_state(self,token_iterator):
+        while True:
+            token = token_iterator.peek()
+            if token is None or token.type == '>':
+                break
+
+            if token.type != 'WHITESPACE':
+                yield token
+
+            token_iterator.next()
+
+    def generator(self,get_token):
+        token_iterator = TokenIterator(get_token)
+
+        self.skip_whitespaces(token_iterator)
+
+        for token in self.normal_state(token_iterator):
+            yield token
+
+        yield None
+
+    def input(self,s):
         self.lexer.lineno = ExtendedLineNo(1,0)
         self.errors = []
         self.lexer.errors = self.errors
@@ -100,7 +156,7 @@ class CustomLexer(object):
 
     def token(self):
         token = self.token_gen.next()
-        if self.debug and token is not None:
+        if self.verbose and token is not None:
             import sys
             print >> sys.stderr, token
         return token

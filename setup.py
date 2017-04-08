@@ -3,13 +3,13 @@
 from distutils.core import setup
 
 setup(name='cmdgen',
-      version='0.4.3',
+      version='0.5',
       description='Simple command generator',
       keywords='generator cli',
       author='Victor Yarmola',
       author_email='std.feanor@gmail.com',
       url='https://github.com/stdk/cmdgen',
-      install_requires=['ply>=3.10'],
+      install_requires=['ply>=3.10','jinja2'],
       packages=['cmdgen'],
       scripts=['scripts/cmdgen'],
       classifiers=[

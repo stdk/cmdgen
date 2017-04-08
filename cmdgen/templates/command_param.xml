@@ -1,0 +1,26 @@
+                        <CommandParam>
+                                <ParameterID>{{element.name}}</ParameterID>
+                                <Name>{{element.key_name}}</Name>
+                                <Help>{{element.name}}</Help>
+                                <Access>
+                                        <{{element.access}}/>
+                                </Access>
+                                <ParamType>
+{% with type = element.type %}
+{% include template_for(element.type) %}
+{% endwith %}
+
+                                </ParamType>
+                                <CaseSensitive>false</CaseSensitive>
+                                <Errors>
+                                        <Error>
+                                                <ErrorID/>
+                                                <ErrorFormat/>
+                                        </Error>
+                                </Errors>
+                                <DefaultValue/>
+                                <KeyParamWithoutValue>false</KeyParamWithoutValue>
+                                <NegateStatus>
+                                        <NotExist/>
+                                </NegateStatus>
+                        </CommandParam>

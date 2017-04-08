@@ -1,0 +1,3 @@
+                                <EnumExtension>
+                                        <EnumExtensionID>{{module}}_{{type.name}}</EnumExtensionID>
+                                </EnumExtension>

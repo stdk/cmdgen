@@ -1,0 +1,6 @@
+                                <Integer>
+                                        <Range>
+                                                <From>{{type.min}}</From>
+                                                <To>{{type.max}}</To>
+                                        </Range>
+                                </Integer>

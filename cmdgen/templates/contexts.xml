@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<Contexts xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="delphixml\src\xml\schema\contexts.xsd">
+{% for context in contexts %}
+        <Context>
+                <ContextID>{{context.name}}</ContextID>
+                <CommandIDs>
+                        {% for command in contexts[context] %}
+                                <CommandID>{{command.name}}</CommandID>
+                        {% endfor%}
+                </CommandIDs>
+                {% if context.prompt %}
+                <Prompt>{{context.prompt}}</Prompt>
+                {% else %}
+                <Prompt/>
+                {% endif %}
+        </Context>      
+{% endfor %}
+</Contexts>

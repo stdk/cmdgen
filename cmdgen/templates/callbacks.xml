@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<GenericImplementation xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="delphixml\src\xml\schema\implementation.xsd">
+{% for command in commands %}
+        <ImplementationItem>
+                <CommandID>{{command.name}}</CommandID>
+                <ParameterID>Callback</ParameterID>
+                <ParameterValue>{{command.name}}</ParameterValue>
+        </ImplementationItem>
+{% endfor %}
+</GenericImplementation>

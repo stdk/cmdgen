@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<EnumTypes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="delphixml\src\xml\schema\definition.xsd">
+{% for enum in enums %}
+        <EnumType>
+                <EnumTypeID>{{module}}_{{enum.name}}</EnumTypeID>
+                <EnumMembers>
+{% for member in enum.members %}
+                        <EnumMember>
+                                <EnumTypeValue>{{loop.index}}</EnumTypeValue>
+                                <EnumTypeValueID>{{member}}</EnumTypeValueID>
+                                <Help>{{member}}</Help>
+                        </EnumMember>
+{% endfor %}                
+                </EnumMembers>
+        </EnumType>
+{% endfor %}        
+</EnumTypes>

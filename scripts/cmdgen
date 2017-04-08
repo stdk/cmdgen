@@ -1,4 +1,4 @@
 #!/usr/bin/python
-from cmdgen import cli
+from cmdgen import main
 
-cli()
+main()

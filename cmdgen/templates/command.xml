@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<Command xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="routers\src\xml\schema\definition.xsd">
+        <CommandID>{{name}}</CommandID>
+        <IsContext>false</IsContext>
+        <Nodes>
+{% for element in nodes %}
+{% include template_for(element) %}
+
+{% endfor %}
+        </Nodes>
+        <Params>
+{% for element in params %}
+{% include 'param.xml' %}
+
+{% endfor %}
+        </Params>
+        <NegateExist>false</NegateExist>
+        <Errors>
+                <Error>
+                        <ErrorID/>
+                        <ErrorFormat/>
+                </Error>
+        </Errors>
+        <HasUnknownNumberOfParams>false</HasUnknownNumberOfParams>
+</Command>

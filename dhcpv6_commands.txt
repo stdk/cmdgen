@@ -1,0 +1,21 @@
+!set module=DHCPv6_Server
+
+create dhcpv6 pool <pool_name 12>
+delete dhcpv6 pool [<pool_name 12> | all]
+show dhcpv6 pool {<pool_name 12>}
+config dhcpv6 pool ipv6network_addr <pool_name 12> [begin <begin_address IpV6address>] [end <end_address IpV6address>] [prefix <prefix 0-128>]
+config dhcpv6 pool domain_name <pool_name 12> <domain_name 240>
+config dhcpv6 pool dns_server <pool_name 12> <dns1 IpV6address> {<dns2 IpV6address>}
+config dhcpv6 pool lifetime <pool_name 12> preferred_lifetime <preferred 60-4294967295> valid_lifetime <valid 60-4294967295>
+config dhcpv6 pool manual_binding <pool_name 12> [[add <address IpV6address>] [client_duid <duid 28>] | delete [<address IpV6address> | all]]
+show dhcpv6 manual_binding {<pool_name 12>}
+show dhcpv6 binding {<pool_name 12>}
+clear dhcpv6 binding {<pool_name 12>}
+enable dhcpv6_server
+disable dhcpv6_server
+show dhcpv6_server {ipif <ipif_name 12>}
+config dhcpv6 pool excluded_address <pool_name 12> [add begin <begin_address IpV6address> end <end_address IpV6address>  | delete [begin <begin_address IpV6address> <end_address IpV6address>  | all]]
+show dhcpv6 excluded_address {<pool_name 12>}
+config dhcpv6_server ipif [<ipif_name 12> | all] state [enable|disable]
+
+!xml out

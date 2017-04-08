@@ -1,0 +1,7 @@
+                <Param>
+{% include 'command_param.xml' %}
+
+                        <ParamStatus>
+                                <{{element.status}}/>
+                        </ParamStatus>
+                </Param>

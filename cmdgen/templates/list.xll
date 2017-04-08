@@ -1,0 +1,7 @@
+{% for command in commands %}
+{{prefix}}{{command.filename}}.xml
+{% endfor %}
+{{prefix}}contexts.xml
+{{prefix}}callbacks.xml
+{{prefix}}enums.xml
+{{prefix}}features.xml

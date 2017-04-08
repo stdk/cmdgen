@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<GenericImplementation xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="delphixml\src\xml\schema\implementation.xsd">
+{% for command in commands %}
+        <ImplementationItem>
+                <CommandID>{{command.name}}</CommandID>
+                <ParameterID>Feature</ParameterID>
+                <ParameterValue>rlHostParamUINT.{{module}}.supported == 1</ParameterValue>
+                <ParameterValue>CalculateExpression</ParameterValue>
+                <ParameterValue>1</ParameterValue>
+        </ImplementationItem>
+{% endfor %}
+</GenericImplementation>
