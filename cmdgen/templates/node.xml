@@ -3,5 +3,5 @@
                                 <Name>{{element.name}}</Name>
                                 <Help>{{element.name}}</Help>
                         </TreeElementProperties>
-                        <Level>{{element.level}}</Level>
+                        <Level>{{level}}</Level>
                 </Node>

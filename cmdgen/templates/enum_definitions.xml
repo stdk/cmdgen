@@ -10,8 +10,8 @@
                                 <EnumTypeValueID>{{member}}</EnumTypeValueID>
                                 <Help>{{member}}</Help>
                         </EnumMember>
-{% endfor %}                
+{% endfor %}
                 </EnumMembers>
         </EnumType>
-{% endfor %}        
+{% endfor %}
 </EnumTypes>

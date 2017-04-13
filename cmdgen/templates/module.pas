@@ -1,4 +1,4 @@
-unit {{module}}
+unit {{module}};
 
 {% if enums|length %}
 const
@@ -8,7 +8,6 @@ const
 {% endfor %}
 {% endfor %}
 
-
 {% endif %}
 {% for command in commands %}
 function {{command.name}}: boolean;
@@ -17,21 +16,20 @@ var
     {{param.name}}: {{param.type.delphiscript_type}};
     {% if param.optional %}
     {{param.name}}_present: boolean;
-    {% endif %}    
+    {% endif %}
 {% endfor %}
     param_type: integer;
     ok: boolean;
 begin
-    result := true;
-    
     writeln('{{command.name}} function');
-
+    
+    result := true;
     {% for param in command.node_params + command.params %}
     {% if param.type.delphiscript_default_value %}
     {{param.name}} := {{param.type.delphiscript_default_value}};
     {% endif %}
     {% endfor %}
-        
+
     {% for param in command.node_params + command.params %}
     {% if param.optional %}
     param_type := cli.getParamTypeAndValue('{{param.name}}', {{ param.name }});
@@ -47,9 +45,22 @@ begin
     end;
     {% else %}
     ok := cli.getParamValue('{{param.name}}',{{param.name}});
-    if ok then writeln(format('{{param.name}}[%s]',{{ param.type.delphiscript_tostring_format % (param.name,) }}))
-    else writeln('reading {{param.name}} failed');
-    {% endif %}    
+    if ok then
+    begin
+        writeln(format('{{param.name}}[%s]',{{ param.type.delphiscript_tostring_format % (param.name,) }}));
+    end
+    else
+    begin
+        writeln('{{command.name}}: reading parameter {{param.name}} failed.');
+        result := false;
+        {% for param in command.node_params + command.params %}
+        {% if param.type.delphiscript_free_format %}
+        {{ param.type.delphiscript_free_format % (param.name,) }};
+        {% endif %}
+        {% endfor %}
+        exit;
+    end;
+    {% endif %}
     
     {% endfor %}
     {% for param in command.node_params + command.params %}
@@ -60,5 +71,4 @@ begin
 end;
 
 {% endfor %}
-
 end.

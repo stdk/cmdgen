@@ -56,10 +56,11 @@ class Program(object):
         return self.command.get_options(env)
 
     @debug_available
-    def convert_to_cli(self):
+    def convert_to_cli(self,level=None):
         if self.command is None:
             return []
-        return self.command.convert_to_cli(self.definitions.cli_environment)
+        return self.command.convert_to_cli(environment=self.definitions.cli_environment,
+                                           level=level)
 
 class DefinitionList(object):
     def __init__(self,definition=None):
@@ -110,8 +111,8 @@ class Command(object):
         return [' '.join(i.split()) for i in options]
 
     @debug_available
-    def convert_to_cli(self, environment=None):
-        return [CLICommand(options) for options
+    def convert_to_cli(self, environment=None, level=None):
+        return [CLICommand(options,level) for options
                 in self.contents.convert_to_cli(environment)]
 
 class Delimiter(object):

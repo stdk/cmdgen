@@ -134,3 +134,13 @@ There are many opinions which brackets represent mandatory or optional elements.
 with most CLI concepts by using mode parameter of its parse_into_options function. mode parameter accepts
 string 'old' or 'new'. All examples in this README are made using new mode which is default. Old mode 
 differs from it by reversing literals for mandatory and optional brackets.
+
+```python
+>>> parse_into_options('Using [old] mode ',mode='old')
+['Using mode', 'Using old mode']
+>>> parse_into_options('Using {new} mode ',mode='new')
+['Using mode', 'Using new mode']
+```
+
+### CLI generation
+

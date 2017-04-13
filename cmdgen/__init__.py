@@ -1,5 +1,6 @@
 from .lexer import lexer
 from .parser import parser,SyntaxError
+from collections import defaultdict
 from .cli import XMLGenerator,CLIContext
 
 import itertools
@@ -105,24 +106,33 @@ class InputHandler(object):
         self.verbose = verbose
         self.cli = cli
         self.env = {}
+        self.current_context = CLIContext('EXEC')
+        self.current_level = 15
         
-        self.interactive_seen = []
-        self.interactive_options = {}
+        self.seen = defaultdict(list)
+        self.options = {}
         
-        self.interactive_commands = {
-            'clear': self.interactive_clear,
-            'show': self.interactive_show,
-            'xml': self.interactive_xml,
-            'set': self.interactive_set
+        self._commands = {
+            'clear': self.clear,
+            'show': self.show,
+            'xml': self.xml,
+            'set': self.set,
+            'context': self.context,
+            'level': self.level,
         }
         
-    def interactive_clear(self,*args):
-        self.interactive_seen = []
-        self.interactive_options = {}
+    def clear(self,what=None,*args):
+        if what == 'seen':
+            self.seen = defaultdict(list)
+        elif what == 'options':
+            self.options = {}
+        else:
+            self.seen = defaultdict(list)
+            self.options = {}
         
-    def interactive_show(self,*args):
-        print 'options:', self.interactive_options
-        for program in self.interactive_seen:
+    def show(self,*args):
+        print 'options:', self.options
+        for program in self.seen:
             print 'CMD:',program
             
             for option in program.get_options(env=self.env):
@@ -133,22 +143,46 @@ class InputHandler(object):
                 for command in commands:
                     print command
     
-    def interactive_xml(self,out_folder=None,*args):
+    def xml(self,out_folder=None,*args):
         if out_folder is None:
             out_folder = 'out'
-        all_seen_commands = itertools.chain(*(p.convert_to_cli() for p in self.interactive_seen))
-
-        generator = XMLGenerator(out_folder=out_folder,**self.interactive_options)
-        generator.generate(list(all_seen_commands))
         
-    def interactive_set(self,*args):
+        def gather_commands(programs):
+            return list(itertools.chain(*(p.convert_to_cli(level=level) 
+                                          for p,level in programs)))
+
+        generator = XMLGenerator(out_folder=out_folder,**self.options)
+        generator.generate({
+            context: gather_commands(self.seen[context])
+            for context in self.seen
+        })
+
+        print 'XML generation completed'
+        
+    def set(self,*args):
         def update_option(key,value=None,*args):
-            if value is None and key in self.interactive_options:
-                del self.interactive_options[key]
+            if value is None and key in self.options:
+                del self.options[key]
+                print 'Option %s removed' % (key,)
             else:
-                self.interactive_options[key] = value
+                self.options[key] = value
+                print 'Option %s set to %s' % (key,value)
     
         [update_option(*arg.split('=')) for arg in args]
+
+    def context(self,name,prompt=None,*args):
+        self.current_context = CLIContext(name,prompt)
+        print 'Current context changed to', self.current_context
+
+    def level(self,level=None,*args):
+        try:
+            if level is None:
+                self.current_level = 15
+            else:
+                self.current_level = int(level)
+            print 'Level set to %s' % (self.current_level,)
+        except ValueError:
+            print 'Incorrect parameter[%s]' % (level,)
 
     def load_definitions(self, filename):
         print 'Loading definition from %s...' % (filename,)
@@ -165,13 +199,16 @@ class InputHandler(object):
     def handle_interactive_command(self, s):
         if s.startswith('!'):
             args = s[1:].split()
-            if args[0] in self.interactive_commands:
-                self.interactive_commands[args[0]](*args[1:])
+            if args[0] in self._commands:
+                self._commands[args[0]](*args[1:])
             else:
                 print 'Unknown command'
             return True
 
-    def process_specific_input(self, s):
+    def process_interactive_input(self, s):
+        if self.handle_interactive_command(s):
+            return
+    
         program, errors = parse(s,mode=self.mode,verbose=self.verbose)
         for error in errors:
             print error
@@ -179,7 +216,7 @@ class InputHandler(object):
         if program is None:
             return
 
-        self.interactive_seen.append(program)
+        self.seen[self.current_context].append((program,self.current_level))
 
         for option in program.get_options(env=self.env):
             print option
@@ -188,12 +225,6 @@ class InputHandler(object):
             commands = program.convert_to_cli()
             for command in commands:
                 print command            
-
-    def process_interactive_input(self, s):
-        if self.handle_interactive_command(s):
-            return
-    
-        return self.process_specific_input(s)
 
 
 def main():
@@ -208,7 +239,7 @@ def main():
     arg_parser.add_argument('-v','--verbose',action='store_true',
                             help='verbose lexer mode')
     arg_parser.add_argument('-c','--cli',action='store_true',
-                            help='Enable convertion of commands into CLI nodes')
+                            help='Show conversion into CLI nodes')
     arg_parser.add_argument('-t','--test',action='store_true',
                             help='perform self-testing procedure')
     arg_parser.add_argument('-d','--definitions',type=str,
@@ -229,13 +260,41 @@ def main():
     if args.input == '-':
         specific_input = sys.stdin.read()
     elif args.input is not None:
-        specific_input = open(args.file).read()
+        specific_input = open(args.input).read()
 
     if args.definitions is not None:
         input_handler.load_definitions(args.definitions)
-        
+    
+    def interactive_lines_coroutine():
+        prompt = yield
+        try:
+            while True:
+                prompt = yield raw_input(prompt)
+        except (EOFError,KeyboardInterrupt):
+            pass
+
+    def string_lines_coroutine(s):
+        yield
+        for line in s.splitlines():
+            yield line
+
+    def commands_iterator(lines_coroutine):
+        try:
+            lines_coroutine.send(None)
+            while True:
+                s = lines_coroutine.next()
+                if not s:
+                    continue
+                while s[-1] == '\\':
+                    s = s[:-1] + '\n' + lines_coroutine.next()
+                yield s
+        except StopIteration:
+            pass
+
     if specific_input is not None:
-        input_handler.process_specific_input(specific_input)
+        lines_coroutine = string_lines_coroutine(specific_input)
+        for command in commands_iterator(lines_coroutine):
+            input_handler.process_interactive_input(command)
     else:
         while True:
             try:

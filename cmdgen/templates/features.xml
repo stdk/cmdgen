@@ -4,7 +4,7 @@
         <ImplementationItem>
                 <CommandID>{{command.name}}</CommandID>
                 <ParameterID>Feature</ParameterID>
-                <ParameterValue>rlHostParamUINT.{{module}}.supported == 1</ParameterValue>
+                <ParameterValue>rlHostParamUINT.{{feature}}.supported == 1</ParameterValue>
                 <ParameterValue>CalculateExpression</ParameterValue>
                 <ParameterValue>1</ParameterValue>
         </ImplementationItem>

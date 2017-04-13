@@ -28,7 +28,9 @@ class XMLGenerator(object):
         self.out_folder = out_folder
         safe_makefirs(self.out_folder)
         
-        self.module = kwargs.get('module','MODULE')
+        self.module = kwargs.get('module','TODO_MODULE')
+        self.prefix = kwargs.get('prefix','')
+        self.feature = kwargs.get('feature','TODO_FEATURE')
 
         #loader = FileSystemLoader([os.path.join(os.path.dirname(__file__),'templates')])
         loader = PackageLoader(__package__)
@@ -37,19 +39,21 @@ class XMLGenerator(object):
                                        trim_blocks=True,
                                        lstrip_blocks=True)
         
-        self.command_template = self.environment.get_template('command.xml')
-        self.node_template = self.environment.get_template('node.xml')
-        self.param_template = self.environment.get_template('command_param.xml')
-        self.string_template = self.environment.get_template('string_type.xml')
-        self.int_template = self.environment.get_template('int_type.xml')
-        self.enum_template = self.environment.get_template('enum_type.xml')
-        self.custom_type_template = self.environment.get_template('custom_type.xml')
-        self.contexts_template = self.environment.get_template('contexts.xml')
-        self.callbacks_template = self.environment.get_template('callbacks.xml')
-        self.list_template = self.environment.get_template('list.xll')
-        self.enum_definitions_template = self.environment.get_template('enum_definitions.xml')
-        self.features_template = self.environment.get_template('features.xml')
-        self.delphiscript_module_template = self.environment.get_template('module.pas')        
+        template = lambda filename: self.environment.get_template(filename)
+
+        self.command_template = template('command.xml')
+        self.node_template = template('node.xml')
+        self.param_template = template('command_param.xml')
+        self.string_template = template('string_type.xml')
+        self.int_template = template('int_type.xml')
+        self.enum_template = template('enum_type.xml')
+        self.custom_type_template = template('custom_type.xml')
+        self.contexts_template = template('contexts.xml')
+        self.callbacks_template = template('callbacks.xml')
+        self.list_template = template('list.xll')
+        self.enum_definitions_template = template('enum_definitions.xml')
+        self.features_template = template('features.xml')
+        self.delphiscript_module_template = template('module.pas')        
 
         self.templates = {
             CLINode: self.node_template,
@@ -64,16 +68,12 @@ class XMLGenerator(object):
         return os.path.join(self.out_folder,filename)
     
     @staticmethod
-    def gather_contexts(commands):
-        contexts = {}
-        for command in commands:
-            context = CLIContext.deduce(command)
-            if context in contexts:
-                contexts[context].append(command)
-            else:
-                contexts[context] = [command]
-
-        return contexts
+    def gather_commands(contexts):
+        return [
+            command
+            for context in contexts
+            for command in contexts[context]
+        ]
         
     @staticmethod       
     def gather_enums(commands):
@@ -95,16 +95,20 @@ class XMLGenerator(object):
             return True
         return filter(filter_callback,commands)
         
-    def generate(self,commands):
-        commands = self.filter_invalid_commands(commands)
-    
-        contexts = self.gather_contexts(commands)
+    def generate(self,contexts):
+        contexts = {
+            context:self.filter_invalid_commands(contexts[context])
+            for context in contexts
+        }
+
+        commands = self.gather_commands(contexts)
         enums = self.gather_enums(commands)
         
         for command in commands:
             self.command_template.stream(**{
                 'module': self.module,
                 'name': command.name,
+                'level': command.level,
                 'nodes': command.elements,
                 'params': command.params,
                 'template_for': self.template_for,
@@ -119,7 +123,7 @@ class XMLGenerator(object):
         }).dump(self.path_of('callbacks.xml'))
 
         self.list_template.stream(**{
-            'prefix': 'xml\\commands\\dhcpv6\\dhcpv6_server\\',
+            'prefix': self.prefix,
             'commands': commands
         }).dump(self.path_of('list.xll'))
         
@@ -130,7 +134,7 @@ class XMLGenerator(object):
             }).dump(self.path_of('enums.xml'))
             
         self.features_template.stream(**{
-            'module': self.module,
+            'feature': self.feature,
             'commands': commands,
         }).dump(self.path_of('features.xml'))
 
@@ -177,14 +181,12 @@ class CLIContext(object):
     def __eq__(self,other):
         return self.name == other.name
 
-    @staticmethod
-    def deduce(command):
-        if command.name.startswith('config'):
-            return CLIContext('config','(config)')
-        return CLIContext('EXEC')
+    def __str__(self):
+        return 'CLIContext(%s,%s)' % (self.name,self.prompt)
+    __repr__ = __str__
 
 class CLICommand(object):
-    def __init__(self,elements):
+    def __init__(self,elements,level=None):
         self.elements = simplify_command_elements(elements)
         self.name = '_'.join(i.name for i in self.elements if type(i) == CLINode)
         
@@ -192,6 +194,10 @@ class CLICommand(object):
         if len(self.params):
             self.elements = self.elements[:-len(self.params)]
         self.node_params = [e for e in self.elements if type(e) == CLICommandParam]
+
+        if level is None:
+            level = 15
+        self.level = level
 
     @property
     def valid(self):
@@ -243,10 +249,9 @@ class CLICommand(object):
 class CLINode(object):
     def __init__(self,name):
         self.name = name
-        self.level = 15
 
     def __str__(self):
-        return 'Node(%s)' % (self.name)
+        return 'Node(%s)' % (self.name,)
     __repr__  = __str__
 
     def __add__(self,other):
@@ -310,6 +315,9 @@ class CLIEnum(object):
     def valid(self):
         return True,None
 
+    def __hash__(self):
+        return hash('|'.join(self.members))
+
     def __str__(self):
         return 'CLIEnum[%s]%s' % (self.name,self.members)
     __repr__ = __str__
@@ -350,25 +358,28 @@ class CLIInt(object):
     __repr__ = __str__
 
 class CLICustomType(object):
+    tostring = '%s.toString()'
+    free = '%s.free'
+
     known_types = {
-        'IpV6address': ('TInetAddr',"TInetAddr.Create()",'%s.free','%s.toString()'),
-        'IpAddress': ('TInetAddr',"TInetAddr.Create()",'%s.free','%s.toString()'),
-        'VlanTag': ('TVlanList',"TVlanList.Create()",'%s.free','%s.toString()'),
-        'VlanRangeAll': ('TVlanList',"TVlanList.Create()",'%s.free','%s.toString()'),
-        'VlanRangeAll2': ('TVlanList',"TVlanList.Create()",'%s.free','%s.toString()'),
-        'ciscoVlanRange': ('TVlanList',"TVlanList.Create()",'%s.free','%s.toString()'),
-        'ciscoPortList': ('TPortSet',"TPortSet.Create()",'%s.free','%s.toString()'),
-        'ciscoPort': ('TPortSet',"TPortSet.Create()",'%s.free','%s.toString()'),
-        'ciscoPortVlanlist': ('TPortSet',"TPortSet.Create()",'%s.free','%s.toString()'),
+        'Integer':           ('integer',   "0",                 None, None),
+        'SignedInteger':     ('integer',   "0",                 None, None),
+        'String':            ('string',    "''",                None, None),
+        'IpV6address':       ('TInetAddr', "TInetAddr.Create()",free, tostring),
+        'IpAddress':         ('TInetAddr', "TInetAddr.Create()",free, tostring),
+        'VlanTag':           ('TVlanList', "TVlanList.Create()",free, tostring),
+        'VlanRangeAll':      ('TVlanList', "TVlanList.Create()",free, tostring),
+        'VlanRangeAll2':     ('TVlanList', "TVlanList.Create()",free, tostring),
+        'ciscoVlanRange':    ('TVlanList', "TVlanList.Create()",free, tostring),
+        'ciscoPortList':     ('TPortSet',  "TPortSet.Create()", free, tostring),
+        'ciscoPort':         ('TPortSet',  "TPortSet.Create()", free, tostring),
+        'ciscoPortVlanlist': ('TPortSet',  "TPortSet.Create()", free, tostring),
     }
 
     def __init__(self,name):
         self.name = name
         
-        if self.name in self.known_types:
-            source = known_types[self.name]
-        else:
-            source = ('integer',None,None,'%s.toString()')
+        source = self.known_types.get(self.name,self.known_types['Integer'])
 
         [self.delphiscript_type,
          self.delphiscript_default_value,
