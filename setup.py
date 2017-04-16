@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='cmdgen',
-      version='0.5.1',
+      version='0.5.2',
       description='Simple command generator',
       keywords='generator cli',
       author='Victor Yarmola',

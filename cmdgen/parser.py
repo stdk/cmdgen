@@ -7,7 +7,7 @@ def p_program(p):
 
 def p_program_short(p):
     'program : command'
-    p[0] = Program(DefinitionList(),p[1])
+    p[0] = Program(p.lexer.definitions.copy(),p[1])
     
 def p_program_definitions_only(p):
     'program : definition_list'
@@ -15,7 +15,8 @@ def p_program_definitions_only(p):
 
 def p_definition_list_single(p):
     'definition_list : definition'
-    p[0] = DefinitionList(p[1])
+    p[0] = p.lexer.definitions.copy()
+    p[0].update(p[1])
 
 def p_definition_list(p):
     'definition_list : definition_list definition'

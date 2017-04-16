@@ -1,6 +1,7 @@
 from .lexer import lexer
 from .parser import parser,SyntaxError
 from collections import defaultdict
+from .ast import DefinitionList
 from .cli import XMLGenerator,CLIContext
 
 import itertools
@@ -43,6 +44,8 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
     ['cmd', 'cmd conf normal', 'cmd conf broken', 'cmd mode ipv4', 'cmd mode ipv4 conf normal', 'cmd mode ipv4 conf broken', 'cmd mode ipv6', 'cmd mode ipv6 conf normal', 'cmd mode ipv6 conf broken']
     >>> parse_into_options('single int 1 2 -3')
     ['single int 1 2 -3']
+    >>> parse_into_options('$a $b',env={'a':['a','A'], 'b':['b','B']})
+    ['a b', 'a B', 'A b', 'A B']
     >>> parse_into_options('int range 1~2 4~3')
     ['int range 1 3', 'int range 1 4', 'int range 2 3', 'int range 2 4']
     >>> parse_into_options('ip address 192.168.19.1~3 /[16|24]')
@@ -75,8 +78,12 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
     >>> parse_into_options('config dhcpv6 pool excluded_address <pool_name 12> [add begin <ipv6addr> end <ipv6addr> | delete [begin <ipv6addr> end <ipv6addr> | all]]')
     ['config dhcpv6 pool excluded_address <pool_name 12> add begin <ipv6addr ipv6addr> end <ipv6addr ipv6addr>', 'config dhcpv6 pool excluded_address <pool_name 12> delete begin <ipv6addr ipv6addr> end <ipv6addr ipv6addr>', 'config dhcpv6 pool excluded_address <pool_name 12> delete all']
     '''
-
-    program,errors = parse(s,mode=mode,verbose=verbose)
+    definitions = DefinitionList()
+    if env is not None:
+        definitions.cmd_environment.update(env)
+    program,errors = parse(s,mode=mode,
+                             verbose=verbose,
+                             definitions=definitions)
 
     for error in errors:
         print error
@@ -84,13 +91,18 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
     if program is None:
         return []
 
-    return program.get_options(env=env)
+    return program.get_options()
 
-def parse(s, mode=None, verbose=False):
+def parse(s, mode=None, verbose=False, definitions=None):
     program = None
     errors = []
 
-    current_lexer = lexer.clone(mode=mode,verbose=verbose)
+    if definitions is None:
+        definitions = DefinitionList()
+
+    current_lexer = lexer.clone(mode=mode,
+                                verbose=verbose,
+                                definitions=definitions)
     try:
         program = parser.parse(s,lexer=current_lexer)
     except SyntaxError as e:
@@ -105,7 +117,7 @@ class InputHandler(object):
         self.mode = mode
         self.verbose = verbose
         self.cli = cli
-        self.env = {}
+        self.definitions = DefinitionList()
         self.current_context = CLIContext('EXEC')
         self.current_level = 15
         
@@ -135,7 +147,7 @@ class InputHandler(object):
         for program in self.seen:
             print 'CMD:',program
             
-            for option in program.get_options(env=self.env):
+            for option in program.get_options():
                 print option
             
             if self.cli:
@@ -194,7 +206,7 @@ class InputHandler(object):
             print 'Loading failed'
             return
             
-        self.env = program.environment
+        self.definitions += program.definitions
         
     def handle_interactive_command(self, s):
         if s.startswith('!'):
@@ -209,7 +221,9 @@ class InputHandler(object):
         if self.handle_interactive_command(s):
             return
     
-        program, errors = parse(s,mode=self.mode,verbose=self.verbose)
+        program, errors = parse(s,mode=self.mode,
+                                  verbose=self.verbose,
+                                  definitions=self.definitions)
         for error in errors:
             print error
             
@@ -217,8 +231,9 @@ class InputHandler(object):
             return
 
         self.seen[self.current_context].append((program,self.current_level))
+        self.definitions = program.definitions
 
-        for option in program.get_options(env=self.env):
+        for option in program.get_options():
             print option
 
         if self.cli:

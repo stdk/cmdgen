@@ -84,17 +84,21 @@ class CustomLexer(object):
         }
     }
 
-    def __init__(self,lexer,mode=None,verbose=False):
+    def __init__(self,lexer,mode=None,verbose=False,definitions=None):
         self.lexer = lexer
         self.token_gen = None
         self.verbose = verbose
+        self.definitions = definitions
         self.errors = None
 
         self.mode = 'new' if mode is None else mode
         self.token_type_for_brace = self.mode_braces[self.mode]
 
-    def clone(self,mode=None,verbose=False):
-        return CustomLexer(self.lexer.clone(),mode=mode,verbose=verbose)
+    def clone(self,mode=None,verbose=False,definitions=None):
+        return CustomLexer(self.lexer.clone(),
+                           mode=mode,
+                           verbose=verbose,
+                           definitions=definitions)
 
     def skip_whitespaces(self,token_iterator):
         while True:

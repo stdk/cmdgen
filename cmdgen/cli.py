@@ -2,6 +2,7 @@ from jinja2 import Environment,FileSystemLoader,PackageLoader,StrictUndefined
 
 import itertools
 import os
+from collections import defaultdict
 
 __all__ = [
     'simplify_command_elements',
@@ -22,6 +23,12 @@ def safe_makefirs(path):
         return True
     except OSError:
         return False
+
+def name_generator(base):
+    i = 0
+    while True:
+        yield '%s%d' % (base,i)
+        i += 1
 
 class XMLGenerator(object):
     def __init__(self,out_folder,**kwargs):
@@ -69,20 +76,45 @@ class XMLGenerator(object):
     
     @staticmethod
     def gather_commands(contexts):
-        return [
+        commands = [
             command
             for context in contexts
             for command in contexts[context]
         ]
-        
+
+        names_count = defaultdict(list)
+        for command in commands:
+            names_count[command.name].append(command)
+
+        for name in names_count:
+            named = names_count[name]
+            if len(named) > 1:
+                print 'Default-generated name %s is shared by the following commands:'
+                for index,command in enumerate(named):
+                    command.name += str(index)
+                    print command                    
+                print 'Their names have been adjusted to fix it.'
+                print 'Note that default name generation is based on command nodes, which being identical may render resulting CLI incorrect.'
+
+        return commands
+
     @staticmethod       
     def gather_enums(commands):
-        return {
-            element.type 
-            for command in commands
-            for element in command.elements + command.params
-            if type(element) == CLICommandParam and type(element.type) == CLIEnum            
-        }
+        enums = defaultdict(list)
+        for command in commands:
+            for element in command.elements + command.params:
+                if type(element) == CLICommandParam:
+                    if type(element.type) == CLIEnum:
+                        enums[element.type].append(element)
+
+        names = name_generator('enum')
+        for enum in enums:
+            if enum.name is None:
+                enum.name = names.next()
+            for param in enums[enum]:
+                param.type = enum
+
+        return enums
 
     @staticmethod
     def filter_invalid_commands(commands):
@@ -94,7 +126,7 @@ class XMLGenerator(object):
                 return False
             return True
         return filter(filter_callback,commands)
-        
+
     def generate(self,contexts):
         contexts = {
             context:self.filter_invalid_commands(contexts[context])
@@ -264,16 +296,38 @@ class CLICommandParam(object):
         'integer',
     ]
 
-    def __init__(self,name,type,optional=False,positional=True):
-        self.name = name
+    def __init__(self,name,type,optional=False,positional=True,key_name=None):
+        if key_name is None:
+            key_name = name
+
+        self.base_name = name
         self.key_name = name
         self.type = type
         self.optional = optional
         self.positional = positional
 
+    def copy(self):
+        return CLICommandParam(self.base_name,
+                               self.type,
+                               optional=self.optional,
+                               positional=self.positional,
+                               key_name=self.key_name)
+
+    @property
+    def name(self):
+        if self.base_name is not None:
+            return self.base_name
+        if type(self.type) == CLIEnum:
+            return '%s_param' % (self.type.name,)
+        return None
+
     @property
     def valid(self):
-        return self.name not in self.restricted_names,'Parameter name cannot be one of the following reserved words: %s' % (self.restricted_names,)
+        if self.name is None:
+            return False,'Unnamed parameter of type %s' % (self.type,)
+        if self.name in self.restricted_names:
+            return False,'Parameter name cannot be one of the following reserved words: %s' % (self.restricted_names,)
+        return True,None
         
     @property
     def access(self):
@@ -285,29 +339,19 @@ class CLICommandParam(object):
  
     def __str__(self):
         return 'Param%s%s(%s:%s)' % ('?' if self.optional else '',
-                                   '' if self.positional else 'K',
+                                   '' if self.positional else ('K[%s]' % self.key_name),
                                    self.name,
                                    self.type)
     __repr__  = __str__
 
 
-def name_generator(base):
-    i = 0
-    while True:
-        yield '%s%d' % (base,i)
-        i += 1    
-    
 class CLIEnum(object):
     delphiscript_type = 'integer'
     delphiscript_default_value = "0"
     delphiscript_free_format = None
     delphiscript_tostring_format = '%s'
 
-    names = name_generator('enum')
-
     def __init__(self,name,members):
-        if name is None:
-            name = self.names.next()
         self.name = name
         self.members = members
 

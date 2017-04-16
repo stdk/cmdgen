@@ -1,0 +1,10 @@
+!set module=test_module feature=TEST
+
+$address=<address IpV6address>;
+$optional_address={$address};
+
+!context config (config)
+test address $optional_address
+test [address $optional_address]
+
+!xml test_out

@@ -33,6 +33,16 @@ def debug_available(method):
         return inner
     return method
 
+def extract_singular_element(lst,check_type=None):
+    if len(lst) == 1 and len(lst[0]) == 1:
+        e = lst[0][0]
+        if check_type is None:
+            return e
+        elif type(e) == check_type:
+            return e
+
+    return None
+
 class Program(object):
     def __init__(self,definitions,command=None):
         self.definitions = definitions
@@ -41,10 +51,6 @@ class Program(object):
     def __str__(self):
         return str(self.command)
     __repr__ = __str__
-
-    @property
-    def environment(self):
-        return self.definitions.cmd_environment
     
     @debug_available
     def get_options(self,env=None):        
@@ -56,27 +62,33 @@ class Program(object):
         return self.command.get_options(env)
 
     @debug_available
-    def convert_to_cli(self,level=None):
+    def convert_to_cli(self,env=None,level=None):
         if self.command is None:
             return []
-        return self.command.convert_to_cli(environment=self.definitions.cli_environment,
-                                           level=level)
+
+        env = {} if env is None else env.copy()
+        env.update(self.definitions.cli_environment)
+        return self.command.convert_to_cli(environment=env,level=level)
 
 class DefinitionList(object):
-    def __init__(self,definition=None):
-        self.cmd_environment = {}
-        self.cli_environment = {}
+    def __init__(self,cmd_environment=None,cli_environment=None):
+        if cmd_environment is None:
+            cmd_environment = {}
+        if cli_environment is None:
+            cli_environment = {}
 
-        if definition is not None:
-            self.update(definition)
+        self.cmd_environment = cmd_environment
+        self.cli_environment = cli_environment
 
+    def copy(self):
+        return DefinitionList(
+            self.cmd_environment.copy(),
+            self.cli_environment.copy()
+        )
+        
     def update(self,definition):
-        self.cmd_environment.update({
-            definition.name: definition.get_options(self.cmd_environment)
-        })
-        self.cli_environment.update({
-            definition.name: definition.convert_to_cli(self.cli_environment)
-        })
+        self.cmd_environment[definition.name] = definition.get_options(self.cmd_environment)
+        self.cli_environment[definition.name] = definition.convert_to_cli(self.cli_environment)
 
     def __str__(self):
         return ' '.join(i for i in self.contents)
@@ -91,7 +103,14 @@ class Definition(object):
         return self.value.get_options(environment)
 
     def convert_to_cli(self,environment):
-        return self.value.convert_to_cli(environment)
+        contents = self.value.convert_to_cli(environment)
+        singular = extract_singular_element(contents,check_type=CLICommandParam)
+        if singular is not None:
+            t = singular.type
+            if type(t) == CLIEnum:
+                t.name = self.name
+
+        return contents
 
     def __str__(self):
         return '$%s = %s ;' % (self.name,self.value)
@@ -112,8 +131,8 @@ class Command(object):
 
     @debug_available
     def convert_to_cli(self, environment=None, level=None):
-        return [CLICommand(options,level) for options
-                in self.contents.convert_to_cli(environment)]
+        options = self.contents.convert_to_cli(environment)
+        return [CLICommand(option,level) for option in options]
 
 class Delimiter(object):
     def __init__(self,value):
@@ -164,9 +183,11 @@ class Node(object):
 
     def convert_to_cli(self, environment=None):
         options = self.contents.convert_to_cli(environment)
-        if len(options) == 1 and len(options[0]) == 1 and type(options[0][0]) == CLICommandParam:
-            options[0][0].optional = True
-            return options
+        param = extract_singular_element(options,check_type=CLICommandParam)
+        if param is not None:
+            altered_param = param.copy()
+            altered_param.optional = True
+            return [[altered_param]]            
         
         return ([[]] if self.optional else []) + options
 
@@ -307,7 +328,7 @@ class NodeOptions(object):
     def convert_to_cli(self, environment=None):
         if self.min_options is None and all(type(i)==PrimitiveNode for i in self.contents):
             t = CLIEnum(None,[i.name for i in self.contents])
-            return [[CLICommandParam(t.name+'_param',t)]]
+            return [[CLICommandParam(None,t)]]
 
         options = [i.convert_to_cli(environment) for i in self.contents]
         
@@ -349,12 +370,19 @@ class NodeSequence(object):
         if [type(i) for i in sequence] != [CLINode,CLIDelimiter,CLICommandParam]:
             return sequence
             
-        node,_,param = sequence            
+        node,_,param = sequence
+
+        if param.positional is False:
+            return sequence
+
+        if param.optional is True:
+            return sequence
         
-        param.positional = False
-        param.key_name = node.name
+        altered_param = param.copy()
+        altered_param.positional = False
+        altered_param.key_name = node.name
             
-        return [param]
+        return [altered_param]
             
     @debug_available
     def convert_to_cli(self, environment=None):
