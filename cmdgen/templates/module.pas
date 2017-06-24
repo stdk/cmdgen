@@ -4,7 +4,7 @@ unit {{module}};
 const
 {% for enum in enums %}
 {% for member in enum.members %}
-    c_{{enum.name}}_{{member}} = {{loop.index}};
+    c_{{module}}_{{enum.name}}_{{member}} = {{loop.index}};
 {% endfor %}
 {% endfor %}
 

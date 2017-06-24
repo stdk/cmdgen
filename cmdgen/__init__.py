@@ -1,7 +1,7 @@
-from .lexer import lexer
-from .parser import parser,SyntaxError
+from .lexer import Lexer
+from .parser import Parser,SyntaxError
 from collections import defaultdict
-from .ast import DefinitionList
+from .ast import Definitions
 from .cli import XMLGenerator,CLIContext
 
 import itertools
@@ -13,21 +13,6 @@ __all__ = [
 
 def parse_into_options(s, env=None, mode=None, verbose=False):
     '''
-    >>> parse_into_options('test\\n[a|b|c]\\nd|e')
-    Line 3 column 2 -> syntax error at '|'
-    []
-    >>> parse_into_options('command test !')
-    Warning: Line 1 column 14: illegal character '!' skipped
-    ['command test']
-    >>> parse_into_options('test {[a} b]')
-    Line 1 column 9 -> syntax error at '}'
-    []
-    >>> parse_into_options('a b c [1')
-    Syntax error: not enough tokens to complete parsing
-    []
-    >>> parse_into_options('$a  =   test     ;\\n\\n\\n   \\n\\n    123  $ ')
-    Line 6 column 11 -> syntax error at ' '
-    []
     >>> parse_into_options('   a   b  c ')
     ['a b c']
     >>> parse_into_options('ping [domain {a|b}|ipv6 addr|ipv4 addr]')
@@ -46,6 +31,8 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
     ['single int 1 2 -3']
     >>> parse_into_options('$a $b',env={'a':['a','A'], 'b':['b','B']})
     ['a b', 'a B', 'A b', 'A B']
+    >>> parse_into_options('$x = +$b; $a$x',env={'a':['a','A'], 'b':['b','B']})
+    ['a+b', 'a+B', 'A+b', 'A+B']
     >>> parse_into_options('int range 1~2 4~3')
     ['int range 1 3', 'int range 1 4', 'int range 2 3', 'int range 2 4']
     >>> parse_into_options('ip address 192.168.19.1~3 /[16|24]')
@@ -68,9 +55,6 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
     ['whitespaces must', 'whitespaces should', 'whitespaces-hell']
     >>> parse_into_options('white{-a-| b }space')
     ['whitespace', 'white-a-space', 'white b space']
-    >>> parse_into_options(' \\n \\n $a \\n = \\n extra \\n \\n ; \\n $$a whitespaces \\n \\n with error')
-    Line 8 column 3 -> syntax error at '$'
-    []
     >>> parse_into_options('delete dhcpv6 pool [<pool_name 12> | all]')
     ['delete dhcpv6 pool <pool_name 12>', 'delete dhcpv6 pool all']
     >>> parse_into_options('config dhcp_relay {hops <int 1-16> | time <sec 0-65535>}(1)')
@@ -78,12 +62,9 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
     >>> parse_into_options('config dhcpv6 pool excluded_address <pool_name 12> [add begin <ipv6addr> end <ipv6addr> | delete [begin <ipv6addr> end <ipv6addr> | all]]')
     ['config dhcpv6 pool excluded_address <pool_name 12> add begin <ipv6addr ipv6addr> end <ipv6addr ipv6addr>', 'config dhcpv6 pool excluded_address <pool_name 12> delete begin <ipv6addr ipv6addr> end <ipv6addr ipv6addr>', 'config dhcpv6 pool excluded_address <pool_name 12> delete all']
     '''
-    definitions = DefinitionList()
-    if env is not None:
-        definitions.cmd_environment.update(env)
     program,errors = parse(s,mode=mode,
                              verbose=verbose,
-                             definitions=definitions)
+                             env=env)
 
     for error in errors:
         print error
@@ -93,22 +74,94 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
 
     return program.get_options()
 
-def parse(s, mode=None, verbose=False, definitions=None):
+def parse_into_cli(s):
+    '''
+    >>> parse_into_cli('1 2 3')
+    [Command(1_2_3:15):([Node(1), Node(2), Node(3)]:[])]
+    >>> parse_into_cli('  $mode = [ipv4|ipv6];\\n$conf = [normal|broken];\\n $key_args = {mode $mode} {conf $conf};\\ncmd $key_args')
+    [Command(cmd:15):([Node(cmd)]:[Param?K(mode)(mode_param:Enum(mode:ipv4|ipv6)), Param?K(conf)(conf_param:Enum(conf:normal|broken))])]
+    >>> parse_into_cli('$it = [a|b|c]; $x = use $it; $x')
+    [Command(:15):([]:[ParamK(use)(it_param:Enum(it:a|b|c))])]
+    >>> parse_into_cli('$state_enum=[enable|disable]; config dhcpv6_server ipif <address IpV6address> state $state_enum')
+    [Command(config_dhcpv6_server_ipif_state:15):([Node(config), Node(dhcpv6_server), Node(ipif), Param(address:Type(IpV6address)), Node(state)]:[Param(state_enum_param:Enum(state_enum:enable|disable))])]
+    '''
+    program,errors = parse(s)
+
+    for error in errors:
+        print error
+
+    if program is None:
+        return []
+
+    return program.convert_to_cli()
+
+def parse(s, mode=None, verbose=False, env=None, definitions=None):
+    '''
+    >>> parse('test\\n[a|b|c]\\nd|e')
+    (None, ["Line 3 column 2 -> syntax error at '|'"])
+    >>> parse('command test !')
+    ({} <-> 'command ! test !', ["Warning: Line 1 column 14: illegal character '!' skipped"])
+    >>> parse('test {[a} b]')
+    (None, ["Line 1 column 9 -> syntax error at '}'"])
+    >>> parse('a b c [1')
+    (None, ['Syntax error: not enough tokens to complete parsing'])
+    >>> parse('$a  =   test     ;\\n\\n\\n   \\n\\n    123  $ ')
+    (None, ["Line 6 column 11 -> syntax error at ' '"])
+    >>> parse(' \\n \\n $a \\n = \\n extra \\n \\n ; \\n $$a whitespaces \\n \\n with error')
+    (None, ["Line 8 column 3 -> syntax error at '$'"])
+    >>> parse('   a   b  c ')
+    ({} <-> 'a ! b ! c !', [])
+    >>> parse('ping [domain {a|b}|ipv6 addr|ipv4 addr]')
+    ({} <-> 'ping ! ['domain ! ?[a|b]'|'ipv6 ! addr'|'ipv4 ! addr']', [])
+    >>> parse('[a|b|c] d {f|g|h}')
+    ({} <-> '[a|b|c] ! d ! ?[f|g|h]', [])
+    >>> parse('cmd [{[a] b} c]')
+    ({} <-> 'cmd ! '?['a ! b'] ! c'', [])
+    >>> parse('test {x} {y} -te-st-')
+    ({} <-> 'test ! ?[x] ! ?[y] ! - te - st -', [])
+    >>> parse('$var=a b c; $var')
+    ({'var': 'a ! b ! c'%var} <-> '$var', [])
+    >>> parse('  $mode = [ipv4|ipv6];\\n$conf = [normal|broken];\\n $key_args = {mode $mode} {conf $conf};\\ncmd $key_args')
+    ({'mode': [ipv4|ipv6]%mode, 'conf': [normal|broken]%conf, 'key_args': '?['mode ! [ipv4|ipv6]%mode'] ! ?['conf ! [normal|broken]%conf']'%key_args} <-> 'cmd ! $key_args', [])
+    >>> parse('single int 1 2 -3')
+    ({} <-> 'single ! int ! 1 ! 2 ! - 3', [])
+    >>> parse('$a $b',env={'a':['a','A'], 'b':['b','B']})
+    ({'a': [a|A]%a, 'b': [b|B]%b} <-> '$a ! $b', [])
+    >>> parse('$x = +$b; $a$x',env={'a':['a','A'], 'b':['b','B']})
+    ({'a': [a|A]%a, 'x': '+ [b|B]%b'%x, 'b': [b|B]%b} <-> '$a $x', [])
+    >>> parse('int range 1~2 4~3')
+    ({} <-> 'int ! range ! Range(1~2) ! Range(3~4)', [])
+    >>> parse('ip address 192.168.19.1~3 /[16|24]')
+    ({} <-> 'ip ! address ! 192 . 168 . 19 . Range(1~3) ! / [16|24]', [])
+    >>> parse('$mode = [ipv4|ipv6] ; (** mode definition **) \\n $conf = [normal|broken]; (* ///(* conf **))/\\\\)\\\\ definition **)\\n$key_args={mode $mode} {conf $conf}; (**** multi\\nline\\n comment  *****)\\ncmd $key_args')
+    ({'mode': [ipv4|ipv6]%mode, 'conf': [normal|broken]%conf, 'key_args': '?['mode ! [ipv4|ipv6]%mode'] ! ?['conf ! [normal|broken]%conf']'%key_args} <-> 'cmd ! $key_args', [])
+    >>> parse('ping server.[a|b][1|2]')
+    ({} <-> 'ping ! server . [a|b] [1|2]', [])
+    >>> parse('permit 00:11:22~23:33:44~45:55')
+    ({} <-> 'permit ! 00 : 11 : Range(22~23) : 33 : Range(44~45) : 55', [])
+    >>> parse('$it = [a|b|c]; $x = use $it; $x')
+    ({'x': 'use ! [a|b|c]%it'%x, 'it': [a|b|c]%it} <-> '$x', [])
+    >>> parse('$state_enum=[enable|disable]; config dhcpv6_server ipif [<address IpV6address> | all] state $state_enum')
+    ({'state_enum': [enable|disable]%state_enum} <-> 'config ! dhcpv6_server ! ipif ! ['<address IpV6address> !'|'! all'] ! state ! $state_enum', [])
+    '''
     program = None
     errors = []
 
-    if definitions is None:
-        definitions = DefinitionList()
+    if env is not None:
+        if definitions is None:
+            definitions = Definitions()
+        definitions.update(Definitions.from_string_options(env))
 
-    current_lexer = lexer.clone(mode=mode,
-                                verbose=verbose,
-                                definitions=definitions)
+    lexer = Lexer(mode=mode,verbose=verbose)
+    parser = Parser(definitions=definitions)
+
     try:
-        program = parser.parse(s,lexer=current_lexer)
+        program = parser.parse(s,lexer=lexer)
+        #print program
     except SyntaxError as e:
         errors.append(str(e))
-    finally:
-        errors = current_lexer.errors + errors
+
+    errors = lexer.errors + errors
 
     return program,errors
 
@@ -117,13 +170,13 @@ class InputHandler(object):
         self.mode = mode
         self.verbose = verbose
         self.cli = cli
-        self.definitions = DefinitionList()
+        self.definitions = Definitions()
         self.current_context = CLIContext('EXEC')
         self.current_level = 15
-        
+
         self.seen = defaultdict(list)
         self.options = {}
-        
+
         self._commands = {
             'clear': self.clear,
             'show': self.show,
@@ -132,7 +185,7 @@ class InputHandler(object):
             'context': self.context,
             'level': self.level,
         }
-        
+
     def clear(self,what=None,*args):
         if what == 'seen':
             self.seen = defaultdict(list)
@@ -141,26 +194,16 @@ class InputHandler(object):
         else:
             self.seen = defaultdict(list)
             self.options = {}
-        
+
     def show(self,*args):
-        print 'options:', self.options
-        for program in self.seen:
-            print 'CMD:',program
-            
-            for option in program.get_options():
-                print option
-            
-            if self.cli:
-                commands = program.convert_to_cli()
-                for command in commands:
-                    print command
-    
+        print self.seen
+
     def xml(self,out_folder=None,*args):
         if out_folder is None:
             out_folder = 'out'
-        
+
         def gather_commands(programs):
-            return list(itertools.chain(*(p.convert_to_cli(level=level) 
+            return list(itertools.chain(*(p.convert_to_cli(level=level)
                                           for p,level in programs)))
 
         generator = XMLGenerator(out_folder=out_folder,**self.options)
@@ -170,7 +213,7 @@ class InputHandler(object):
         })
 
         print 'XML generation completed'
-        
+
     def set(self,*args):
         def update_option(key,value=None,*args):
             if value is None and key in self.options:
@@ -179,7 +222,7 @@ class InputHandler(object):
             else:
                 self.options[key] = value
                 print 'Option %s set to %s' % (key,value)
-    
+
         [update_option(*arg.split('=')) for arg in args]
 
     def context(self,name,prompt=None,*args):
@@ -201,13 +244,13 @@ class InputHandler(object):
         program, errors = parse(open(filename,'r').read())
         for error in errors:
             print error
-            
+
         if program is None:
             print 'Loading failed'
             return
-            
+
         self.definitions += program.definitions
-        
+
     def handle_interactive_command(self, s):
         if s.startswith('!'):
             args = s[1:].split()
@@ -220,13 +263,13 @@ class InputHandler(object):
     def process_interactive_input(self, s):
         if self.handle_interactive_command(s):
             return
-    
+
         program, errors = parse(s,mode=self.mode,
                                   verbose=self.verbose,
                                   definitions=self.definitions)
         for error in errors:
             print error
-            
+
         if program is None:
             return
 
@@ -239,7 +282,7 @@ class InputHandler(object):
         if self.cli:
             commands = program.convert_to_cli()
             for command in commands:
-                print command            
+                print command
 
 
 def main():
@@ -264,13 +307,15 @@ def main():
     if args.test == True:
         import doctest
         doctest.run_docstring_examples(parse_into_options,globals())
+        doctest.run_docstring_examples(parse_into_cli,globals())
+        doctest.run_docstring_examples(parse,globals())
         print 'Tests completed'
         sys.exit(0)
 
     input_handler = InputHandler(mode=args.mode,
                                  verbose=args.verbose,
                                  cli=args.cli)
-                                 
+
     specific_input = None
     if args.input == '-':
         specific_input = sys.stdin.read()
@@ -279,7 +324,7 @@ def main():
 
     if args.definitions is not None:
         input_handler.load_definitions(args.definitions)
-    
+
     def interactive_lines_coroutine():
         prompt = yield
         try:

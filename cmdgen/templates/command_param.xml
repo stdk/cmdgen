@@ -1,7 +1,7 @@
                         <CommandParam>
                                 <ParameterID>{{element.name}}</ParameterID>
-                                <Name>{{element.key_name}}</Name>
-                                <Help>{{element.name}}</Help>
+                                <Name>{{element.key}}</Name>
+                                <Help>{{element.help}}</Help>
                                 <Access>
                                         <{{element.access}}/>
                                 </Access>

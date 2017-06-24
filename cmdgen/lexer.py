@@ -36,8 +36,6 @@ def t_error(t):
     t.lexer.errors.append("Warning: Line %d column %d: illegal character '%s' skipped" % args)
     t.lexer.skip(1)    
 
-import ply.lex as lex
-
 class ExtendedLineNo(object):
     def __init__(self,lineno,startpos):
         self.lineno = lineno
@@ -68,7 +66,9 @@ class TokenIterator(object):
         self.token = self.get_token()
         return token
 
-class CustomLexer(object):
+import ply.lex as lex
+
+class Lexer(object):
     mode_braces = {
         'new': {
             '[': 'MANDATORY_BRACE_BEGIN',
@@ -84,21 +84,17 @@ class CustomLexer(object):
         }
     }
 
-    def __init__(self,lexer,mode=None,verbose=False,definitions=None):
-        self.lexer = lexer
+    def __init__(self,mode=None,verbose=False):
+        self.lexer = lex.lex()
         self.token_gen = None
         self.verbose = verbose
-        self.definitions = definitions
         self.errors = None
 
         self.mode = 'new' if mode is None else mode
         self.token_type_for_brace = self.mode_braces[self.mode]
 
     def clone(self,mode=None,verbose=False,definitions=None):
-        return CustomLexer(self.lexer.clone(),
-                           mode=mode,
-                           verbose=verbose,
-                           definitions=definitions)
+        return Lexer(mode=mode,verbose=verbose)
 
     def skip_whitespaces(self,token_iterator):
         while True:
@@ -164,5 +160,3 @@ class CustomLexer(object):
             import sys
             print >> sys.stderr, token
         return token
-
-lexer = CustomLexer(lex.lex())

@@ -5,7 +5,6 @@ import os
 from collections import defaultdict
 
 __all__ = [
-    'simplify_command_elements',
     'XMLGenerator',
     'CLICommand',
     'CLINode',
@@ -34,18 +33,17 @@ class XMLGenerator(object):
     def __init__(self,out_folder,**kwargs):
         self.out_folder = out_folder
         safe_makefirs(self.out_folder)
-        
+
         self.module = kwargs.get('module','TODO_MODULE')
         self.prefix = kwargs.get('prefix','')
         self.feature = kwargs.get('feature','TODO_FEATURE')
 
-        #loader = FileSystemLoader([os.path.join(os.path.dirname(__file__),'templates')])
         loader = PackageLoader(__package__)
         self.environment = Environment(undefined=StrictUndefined,
                                        loader=loader,
                                        trim_blocks=True,
                                        lstrip_blocks=True)
-        
+
         template = lambda filename: self.environment.get_template(filename)
 
         self.command_template = template('command.xml')
@@ -60,7 +58,7 @@ class XMLGenerator(object):
         self.list_template = template('list.xll')
         self.enum_definitions_template = template('enum_definitions.xml')
         self.features_template = template('features.xml')
-        self.delphiscript_module_template = template('module.pas')        
+        self.delphiscript_module_template = template('module.pas')
 
         self.templates = {
             CLINode: self.node_template,
@@ -73,14 +71,14 @@ class XMLGenerator(object):
 
     def path_of(self,filename):
         return os.path.join(self.out_folder,filename)
-    
-    @staticmethod
-    def gather_commands(contexts):
-        commands = [
+
+    @classmethod
+    def gather_commands(cls,contexts):
+        commands = cls.filter_invalid_commands([
             command
             for context in contexts
             for command in contexts[context]
-        ]
+        ])
 
         names_count = defaultdict(list)
         for command in commands:
@@ -92,26 +90,28 @@ class XMLGenerator(object):
                 print 'Default-generated name %s is shared by the following commands:'
                 for index,command in enumerate(named):
                     command.name += str(index)
-                    print command                    
+                    print command
                 print 'Their names have been adjusted to fix it.'
                 print 'Note that default name generation is based on command nodes, which being identical may render resulting CLI incorrect.'
 
         return commands
 
-    @staticmethod       
-    def gather_enums(commands):
+    @staticmethod
+    def gather_enums(contexts):
         enums = defaultdict(list)
-        for command in commands:
-            for element in command.elements + command.params:
-                if type(element) == CLICommandParam:
-                    if type(element.type) == CLIEnum:
-                        enums[element.type].append(element)
+        for context in contexts:
+            for command in contexts[context]:
+                for element in command.elements + command.params:
+                    if type(element) == CLICommandParam:
+                        if type(element.type) == CLIEnum:
+                            enums[element.type].append(element)
 
         names = name_generator('enum')
         for enum in enums:
             if enum.name is None:
                 enum.name = names.next()
             for param in enums[enum]:
+                print param
                 param.type = enum
 
         return enums
@@ -128,14 +128,10 @@ class XMLGenerator(object):
         return filter(filter_callback,commands)
 
     def generate(self,contexts):
-        contexts = {
-            context:self.filter_invalid_commands(contexts[context])
-            for context in contexts
-        }
-
+        enums = self.gather_enums(contexts)
         commands = self.gather_commands(contexts)
-        enums = self.gather_enums(commands)
-        
+        print commands      
+
         for command in commands:
             self.command_template.stream(**{
                 'module': self.module,
@@ -149,7 +145,7 @@ class XMLGenerator(object):
         self.contexts_template.stream(**{
             'contexts': contexts,
         }).dump(self.path_of('contexts.xml'))
-        
+
         self.callbacks_template.stream(**{
             'commands': commands,
         }).dump(self.path_of('callbacks.xml'))
@@ -158,13 +154,13 @@ class XMLGenerator(object):
             'prefix': self.prefix,
             'commands': commands
         }).dump(self.path_of('list.xll'))
-        
+
         if enums:
             self.enum_definitions_template.stream(**{
                 'module': self.module,
                 'enums': enums
             }).dump(self.path_of('enums.xml'))
-            
+
         self.features_template.stream(**{
             'feature': self.feature,
             'commands': commands,
@@ -191,15 +187,15 @@ def simplify_command_elements(elements):
               in itertools.groupby(elements,lambda x: x.__class__)
               if key != CLIDelimiter]
     elements = list(itertools.chain(*groups))
-    
+
     #end_pairs = itertools.izip(elements[-2::-2],elements[-1::-2])
-    
+
     #def pair_selector(a,b):
     #    return type(a)==CLINode and type(b)==CLICommandParam
-    
+
     #key_param_pairs = itertools.takewhile(pair_selector,end_pairs)
     #print 'pairs',key_param_pairs
-                      
+
     return elements
 
 class CLIContext(object):
@@ -221,7 +217,7 @@ class CLICommand(object):
     def __init__(self,elements,level=None):
         self.elements = simplify_command_elements(elements)
         self.name = '_'.join(i.name for i in self.elements if type(i) == CLINode)
-        
+
         self.params = list(itertools.takewhile(lambda x: type(x) == CLICommandParam,self.elements[::-1]))[::-1]
         if len(self.params):
             self.elements = self.elements[:-len(self.params)]
@@ -239,8 +235,8 @@ class CLICommand(object):
         if type(self.elements[0]) != CLINode:
             return False,'First command element must be Node'
 
-        all_nodes_mandatory = all(not e.optional for e 
-                                  in self.elements 
+        all_nodes_mandatory = all(not e.optional for e
+                                  in self.elements
                                   if type(e) == CLICommandParam)
 
         if not all_nodes_mandatory:
@@ -253,7 +249,7 @@ class CLICommand(object):
 
             if len(access_groups) > 1 and access_groups[0][0]:
                 return False,'First group of parameters must be Mandatory'
-        
+
         param_names = set()
         for param in self.params + self.node_params:
             type_valid,error = param.type.valid
@@ -263,7 +259,7 @@ class CLICommand(object):
             if param.name in param_names:
                 return False,'Parameter name[%s] is not unique among parameters of this command' % (param.name,)
             param_names.add(param.name)
-            
+
             valid,error = param.valid
             if not valid:
                 return False,error
@@ -273,9 +269,9 @@ class CLICommand(object):
     @property
     def filename(self):
         return self.name
-        
+
     def __str__(self):
-        return 'Command[%s]:(%s)(%s)' % (self.name,self.elements,self.params)
+        return 'Command(%s:%s):(%s:%s)' % (self.name,self.level,self.elements,self.params)
     __repr__ = __str__
 
 class CLINode(object):
@@ -301,7 +297,7 @@ class CLICommandParam(object):
             key_name = name
 
         self.base_name = name
-        self.key_name = name
+        self.key_name = key_name
         self.type = type
         self.optional = optional
         self.positional = positional
@@ -318,8 +314,19 @@ class CLICommandParam(object):
         if self.base_name is not None:
             return self.base_name
         if type(self.type) == CLIEnum:
-            return '%s_param' % (self.type.name,)
+            if self.type.name is not None:
+                return '%s_param' % (self.type.name,)
         return None
+
+    @property
+    def key(self):
+        if self.key_name is None:
+            return self.name
+        return self.key_name
+
+    @property
+    def help(self):
+        return self.name
 
     @property
     def valid(self):
@@ -328,20 +335,20 @@ class CLICommandParam(object):
         if self.name in self.restricted_names:
             return False,'Parameter name cannot be one of the following reserved words: %s' % (self.restricted_names,)
         return True,None
-        
+
     @property
     def access(self):
         return 'Optional' if self.optional else 'Mandatory'
-        
+
     @property
     def status(self):
         return 'Positional' if self.positional else 'Key'
- 
+
     def __str__(self):
         return 'Param%s%s(%s:%s)' % ('?' if self.optional else '',
-                                   '' if self.positional else ('K[%s]' % self.key_name),
-                                   self.name,
-                                   self.type)
+                                     '' if self.positional else ('K(%s)' % (self.key_name or '?',)),
+                                     self.name or '?',
+                                     self.type)
     __repr__  = __str__
 
 
@@ -363,7 +370,8 @@ class CLIEnum(object):
         return hash('|'.join(self.members))
 
     def __str__(self):
-        return 'CLIEnum[%s]%s' % (self.name,self.members)
+        return 'Enum(%s:%s)' % (self.name or '?',
+                                '|'.join(self.members))
     __repr__ = __str__
 
 class CLIString(object):
@@ -371,7 +379,7 @@ class CLIString(object):
     delphiscript_default_value = "''"
     delphiscript_free_format = None
     delphiscript_tostring_format = '%s'
-    
+
     def __init__(self,max_length):
         self.max_length = max_length
 
@@ -380,7 +388,7 @@ class CLIString(object):
         return True,None
 
     def __str__(self):
-        return 'CLIString[%s]' % (self.max_length,)
+        return 'Str(%s)' % (self.max_length,)
     __repr__ = __str__
 
 class CLIInt(object):
@@ -398,7 +406,7 @@ class CLIInt(object):
         return True,None
 
     def __str__(self):
-        return 'CLIint[%s-%s]' % (self.min,self.max)
+        return 'Int(%s-%s)' % (self.min,self.max)
     __repr__ = __str__
 
 class CLICustomType(object):
@@ -422,7 +430,7 @@ class CLICustomType(object):
 
     def __init__(self,name):
         self.name = name
-        
+
         source = self.known_types.get(self.name,self.known_types['Integer'])
 
         [self.delphiscript_type,
@@ -438,13 +446,13 @@ class CLICustomType(object):
         return True,None
 
     def __str__(self):
-        return 'CLICustomType[%s]' % (self.name,)
+        return 'Type(%s)' % (self.name,)
     __repr__ = __str__
 
 class CLIDelimiter(object):
     def __str__(self):
-        return 'Delimiter'
-    __repr__  = __str__  
+        return '!'
+    __repr__  = __str__
 
     @staticmethod
     def join(iterable):
