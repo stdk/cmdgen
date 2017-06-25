@@ -3,6 +3,8 @@ from .parser import Parser,SyntaxError
 from collections import defaultdict
 from .ast import Definitions
 from .cli import XMLGenerator,CLIContext
+from .options_visitor import OptionsVisitor
+from .cli_visitor import CLIVisitor
 
 import itertools
 
@@ -72,7 +74,7 @@ def parse_into_options(s, env=None, mode=None, verbose=False):
     if program is None:
         return []
 
-    return program.get_options()
+    return OptionsVisitor().visit(program)
 
 def parse_into_cli(s):
     '''
@@ -93,7 +95,7 @@ def parse_into_cli(s):
     if program is None:
         return []
 
-    return program.convert_to_cli()
+    return CLIVisitor().visit(program)
 
 def parse(s, mode=None, verbose=False, env=None, definitions=None):
     '''
@@ -203,8 +205,7 @@ class InputHandler(object):
             out_folder = 'out'
 
         def gather_commands(programs):
-            return list(itertools.chain(*(p.convert_to_cli(level=level)
-                                          for p,level in programs)))
+            return list(itertools.chain(*(CLIVisitor(level=level).visit(p) for p,level in programs)))
 
         generator = XMLGenerator(out_folder=out_folder,**self.options)
         generator.generate({
@@ -276,11 +277,11 @@ class InputHandler(object):
         self.seen[self.current_context].append((program,self.current_level))
         self.definitions = program.definitions
 
-        for option in program.get_options():
+        for option in OptionsVisitor().visit(program):
             print option
 
         if self.cli:
-            commands = program.convert_to_cli()
+            commands = CLIVisitor(self.current_level).visit(program)
             for command in commands:
                 print command
 

@@ -4,6 +4,9 @@ import itertools
 import os
 from collections import defaultdict
 
+from .ast import *
+from .dispatch import dispatch
+
 __all__ = [
     'XMLGenerator',
     'CLICommand',

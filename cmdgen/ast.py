@@ -1,7 +1,3 @@
-import itertools
-
-from .cli import *
-
 __all__ = [
     'Program',
     'Definitions',
@@ -14,10 +10,9 @@ __all__ = [
     'IntParameter',
     'Range',
     'Options',
+    'MinReqOptions',
     'Sequence',
 ]
-
-import sys
 
 DEBUG = False
 DEBUG_FUNCTIONS = ['evaluate']
@@ -31,15 +26,6 @@ def debug_available(method):
         return inner
     return method
 
-def extract_singular_element(lst,check_type=None):
-    if len(lst) == 1 and len(lst[0]) == 1:
-        e = lst[0][0]
-        if check_type is None:
-            return e
-        elif type(e) == check_type:
-            return e
-
-    return None
 
 class Program(object):
     def __init__(self,definitions,sequence=None):
@@ -50,30 +36,6 @@ class Program(object):
         return '%s <-> %s' % (self.definitions,self.sequence)
     __repr__ = __str__
 
-    @debug_available
-    def get_options(self,env=None):
-        if self.sequence is None:
-            return []
-
-        current_env = self.definitions
-        if env is not None:
-            current_env = self.definitions.copy()
-            current_env.update(env)
-
-        options = self.sequence.evaluate(env=current_env).get_options()
-        return [' '.join(i.split()) for i in options]
-
-    @debug_available
-    def convert_to_cli(self,env=None,level=None):
-        if self.sequence is None:
-            return []
-
-        current_env = self.definitions
-        if env is not None:
-            current_env = self.definitions.copy()
-            current_env.update(env)
-        options = self.sequence.evaluate(env=current_env).convert_to_cli()
-        return [CLICommand(option,level) for option in options]
 
 class Definitions(object):
     def __init__(self,env=None):
@@ -115,6 +77,7 @@ class Definitions(object):
         return str(self.env)
     __repr__ = __str__
 
+
 class Definition(object):
     def __init__(self,name,value):
         self.name = name
@@ -126,24 +89,10 @@ class Definition(object):
         result.name = self.name
         return result
 
-    # @debug_available
-    # def get_options(self,env):
-    #     return self.value.get_options(env)
-
-    # @debug_available
-    # def convert_to_cli(self,env):
-    #     contents = self.value.convert_to_cli(env)
-    #     singular = extract_singular_element(contents,check_type=CLICommandParam)
-    #     if singular is not None:
-    #         t = singular.type
-    #         if type(t) == CLIEnum:
-    #             t.name = self.name
-
-    #     return contents
-
     def __str__(self):
         return 'Definition[$%s = %s]' % (self.name,self.value)
     __repr__ = __str__
+
 
 class ASTNode(object):
     name = None
@@ -158,13 +107,6 @@ class ASTNode(object):
     def evaluate(self,env=None):
         return self
 
-    @debug_available
-    def get_options(self,env=None):
-        return []
-
-    @debug_available
-    def convert_to_cli(self,env=None):
-        return []
 
 class Delimiter(ASTNode):
     def __init__(self,value):
@@ -174,13 +116,6 @@ class Delimiter(ASTNode):
         return '!'
     __repr__ = __str__
 
-    @debug_available
-    def get_options(self,env=None):
-        return [self.value]
-
-    @debug_available
-    def convert_to_cli(self, env=None):
-        return [[CLIDelimiter()]]
 
 class Primitive(ASTNode):
     def __init__(self,value):
@@ -191,18 +126,12 @@ class Primitive(ASTNode):
         return self.value
     __repr__ = __str__
 
-    @debug_available
-    def get_options(self,env=None):
-        return [self.value]
-
-    @debug_available
-    def convert_to_cli(self, env=None):
-        return [[CLINode(self.value)]]
 
 class VariableError(Exception):
     def __init__(self, name):
         msg = 'Variable(%s) not found' % (name,)
         super(VariableError, self).__init__(msg)
+
 
 class Variable(ASTNode):
     def __init__(self,name):
@@ -218,17 +147,6 @@ class Variable(ASTNode):
             raise VariableError(self.name)
         return env[self.name]
 
-    # @debug_available
-    # def get_options(self,env=None):
-    #     if env is None or self.name not in env:
-    #         raise VariableError(self.name)
-    #     return env[self.name].get_options(env)
-
-    # @debug_available
-    # def convert_to_cli(self,env=None):
-    #     if env is None or self.name not in env:
-    #         raise VariableError(self.name)
-    #     return env[self.name].convert_to_cli(env)
 
 class Range(ASTNode):
     @staticmethod
@@ -245,54 +163,37 @@ class Range(ASTNode):
         return 'Range(%d~%d)' % (self.start,self.end)
     __repr__ = __str__
 
-    @debug_available
-    def get_options(self,env=None):
-        return [str(i) for i in xrange(self.start,self.end+1)]
-
-    @debug_available
-    def convert_to_cli(self,env=None):
-        return [[CLINode(str(i))] for i in xrange(self.start,self.end+1)]
 
 class Parameter(ASTNode):
-    def __init__(self,name,type=None):
+    def __init__(self,name,type_name=None):
         self.name = name
-        if type is None:
-            self.type = CLICustomType(name)
-        else:
-            self.type = CLICustomType(type)
+        self.type_name = type_name if type_name else name
 
     def __str__(self):
-        return '<%s %s>' % (self.name,self.type.name)
+        return '<%s %s>' % (self.name,self.type_name)
     __repr__ = __str__
 
-    @debug_available
-    def get_options(self,env=None):
-        return [str(self)]
-
-    @debug_available
-    def convert_to_cli(self, env=None):
-        return [[CLICommandParam(self.name,self.type)]]
 
 class StringParameter(Parameter):
     def __init__(self,name,max_length):
         self.name = name
         self.max_length = Range.to_int(max_length)
-        self.type = CLIString(self.max_length)
 
     def __str__(self):
         return '<%s %s>' % (self.name,self.max_length)
     __repr__ = __str__
+
 
 class IntParameter(Parameter):
     def __init__(self,name,start,end):
         self.name = name
         self.start = Range.to_int(start)
         self.end = Range.to_int(end)
-        self.type = CLIInt(self.start,self.end)
 
     def __str__(self):
         return '<%s %s-%s>' % (self.name,self.start,self.end)
     __repr__ = __str__
+
 
 class Options(ASTNode):
     def __init__(self,contents=None,optional=False):
@@ -327,32 +228,6 @@ class Options(ASTNode):
         return Options([i.evaluate(env) for i in self.contents],
                         optional=self.optional).simplify()
 
-    @debug_available
-    def get_options(self,env=None):
-        options = [i.get_options(env) for i in self.contents]
-        if self.optional:
-            options = [['']] + options
-        return list(itertools.chain(*options))
-
-    @debug_available
-    def convert_to_cli(self, env=None):
-        if all(type(i)==Primitive for i in self.contents):
-            t = CLIEnum(self.name,[i.value for i in self.contents])
-            return [[CLICommandParam(None,t,optional=self.optional)]]
-
-        options = [i.convert_to_cli(env) for i in self.contents]
-
-        if self.optional:
-            if len(options) == 1:
-                param = extract_singular_element(options[0],check_type=CLICommandParam)
-                if param is not None:
-                    altered_param = param.copy()
-                    altered_param.optional = True
-                    return [[altered_param]]
-
-            options = [[]] + options
-
-        return list(itertools.chain(*options))
 
 class MinReqOptions(ASTNode):
     def __init__(self,contents=None,min_options=None):
@@ -383,25 +258,6 @@ class MinReqOptions(ASTNode):
         return MinReqOptions([i.evaluate(env) for i in self.contents],
                               min_options=self.min_options).simplify()
 
-    @debug_available
-    def get_options(self,env=None):
-        options = [i.get_options(env) for i in self.contents]
-
-        result = []
-        for i in range(self.min_options,len(options)+1):
-            for j in itertools.combinations(options,i):
-                result += [' '.join(k) for k in itertools.product(*j)]
-        return result
-
-    @debug_available
-    def convert_to_cli(self, env=None):
-        options = [i.convert_to_cli(env) for i in self.contents]
-
-        result = []
-        for i in range(self.min_options,len(options)+1):
-            for j in itertools.combinations(options,i):
-                result += [CLIDelimiter.join(k) for k in itertools.product(*j)]
-        return result
 
 class Sequence(ASTNode):
     def __init__(self,contents,separator=None):
@@ -427,42 +283,3 @@ class Sequence(ASTNode):
     def evaluate(self,env=None):
         return Sequence([i.evaluate(env) for i in self.contents],
                          self.separator).simplify()
-
-    @debug_available
-    def get_options(self,env=None):
-        options = [i.get_options(env) for i in self.contents]
-        if len(options) > 1:
-            return [self.separator.join(i)
-                    for i in itertools.product(*options)]
-        else:
-            return options[0]
-
-    def try_replace_with_key_param(self,sequence):
-        if [type(i) for i in sequence] != [CLINode,CLIDelimiter,CLICommandParam]:
-            return sequence
-
-        node,_,param = sequence
-
-        if param.positional is False:
-            return sequence
-
-        if param.optional is True:
-            return sequence
-
-        altered_param = param.copy()
-        altered_param.positional = False
-        altered_param.key_name = node.name
-
-        return [altered_param]
-
-    @debug_available
-    def convert_to_cli(self, env=None):
-        options = [i.convert_to_cli(env) for i in self.contents]
-
-        if len(options) > 1:
-            sequences = [list(itertools.chain(*i))
-                         for i in itertools.product(*options)]
-
-            return [self.try_replace_with_key_param(s) for s in sequences]
-        else:
-            return options[0]
