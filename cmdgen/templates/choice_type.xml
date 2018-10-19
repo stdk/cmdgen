@@ -1,0 +1,3 @@
+                                        <ChoiceExtension>
+                                                <ChoiceExtensionID>{{module}}_{{type.name}}</ChoiceExtensionID>
+                                        </ChoiceExtension>

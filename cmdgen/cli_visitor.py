@@ -37,7 +37,8 @@ class CLIVisitor(object):
         return [CLICommand(option,self.level) for option in options]
 
     def try_replace_with_key_param(self,sequence):
-        if [type(i) for i in sequence] != [CLINode,CLIDelimiter,CLICommandParam]:
+        types = [type(i) for i in sequence]
+        if types != [CLINode,CLIDelimiter,CLICommandParam]:
             return sequence
 
         node,_,param = sequence
@@ -80,12 +81,12 @@ class CLIVisitor(object):
 
     @visit.when(Options)
     def visit(self, options_node):
-        if all(type(i)==Primitive for i in options_node.contents):
+        if len(options_node.contents) > 1 and all(type(i)==Primitive for i in options_node.contents):
             t = CLIEnum(options_node.name,[i.value for i in options_node.contents])
             return [[CLICommandParam(None,t,optional=options_node.optional)]]
-
+        
         options = [self.visit(i) for i in options_node.contents]
-
+        
         if options_node.optional:
             if len(options) == 1:
                 param = extract_singular_element(options[0],check_type=CLICommandParam)
@@ -96,7 +97,16 @@ class CLIVisitor(object):
 
             options = [[]] + options
 
-        return list(itertools.chain(*options))
+        result = list(itertools.chain(*options))
+        
+        if len(result) > 1:
+            if all(len(element)==1 for element in result):
+                flat_elements = [element[0] for element in result]
+                if all(type(element)==CLICommandParam for element in flat_elements):
+                    t = CLIChoiceType(options_node.name,[i.type for i in flat_elements])
+                    return [[CLICommandParam(flat_elements[0].name,t,optional=options_node.optional)]]
+            
+        return result
 
     @visit.when(MinReqOptions)
     def visit(self, options_node):
@@ -108,13 +118,30 @@ class CLIVisitor(object):
                 result += [CLIDelimiter.join(k) for k in itertools.product(*j)]
         return result
 
+    def join_node_runs(self,sequence):
+        def try_join_nodes(key,group):
+            if key == CLINode:
+                return [reduce(lambda a,b:a+b,group)]
+            if key == CLIDelimiter:
+                return [group.next()]
+            return list(group)
+        
+        joined_sequences = (
+            try_join_nodes(key,group) 
+            for key,group 
+            in itertools.groupby(sequence,lambda x:type(x))
+        )
+        
+        return list(itertools.chain(*joined_sequences))
+        
     @visit.when(Sequence)
     def visit(self, sequence):
         options = [self.visit(i) for i in sequence.contents]
 
         if len(options) > 1:
-            sequences = [list(itertools.chain(*i))
+            sequences = [self.join_node_runs(itertools.chain(*i))
                          for i in itertools.product(*options)]
+            
 
             return [self.try_replace_with_key_param(s) for s in sequences]
         else:

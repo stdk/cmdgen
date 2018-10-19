@@ -4,4 +4,5 @@
 {{prefix}}contexts.xml
 {{prefix}}callbacks.xml
 {{prefix}}enums.xml
+{{prefix}}choice_types.xml
 {{prefix}}features.xml

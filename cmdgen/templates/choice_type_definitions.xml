@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<ChoiceTypes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="delphixml\src\xml\schema\definition.xsd">
+{% for choice_type in choice_types %}
+        <ChoiceType>
+                <TypeID>{{module}}_{{choice_type.name}}</TypeID>
+                <ChoiceMembers>
+{% for type in choice_type.types %}
+                        <ChoiceMember>
+                                <ParamType>
+{% include template_for(type) %}
+
+                                </ParamType>
+                                <ChoiceNames>
+                                        <ChoiceName>{{type.name}}</ChoiceName>
+                                </ChoiceNames>
+                                <Help>{{type.name}}</Help>
+                        </ChoiceMember>
+{% endfor %}
+                </ChoiceMembers>
+        </ChoiceType>
+{% endfor %}        
+</ChoiceTypes>     

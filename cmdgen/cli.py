@@ -16,7 +16,8 @@ __all__ = [
     'CLIString',
     'CLIInt',
     'CLIEnum',
-    'CLICustomType'
+    'CLICustomType',
+    'CLIChoiceType'
 ]
 
 def safe_makefirs(path):
@@ -55,11 +56,13 @@ class XMLGenerator(object):
         self.string_template = template('string_type.xml')
         self.int_template = template('int_type.xml')
         self.enum_template = template('enum_type.xml')
+        self.choice_type_template = template('choice_type.xml')
         self.custom_type_template = template('custom_type.xml')
         self.contexts_template = template('contexts.xml')
         self.callbacks_template = template('callbacks.xml')
         self.list_template = template('list.xll')
         self.enum_definitions_template = template('enum_definitions.xml')
+        self.choice_type_definitions_template = template('choice_type_definitions.xml')
         self.features_template = template('features.xml')
         self.delphiscript_module_template = template('module.pas')
 
@@ -69,7 +72,8 @@ class XMLGenerator(object):
             CLIString: self.string_template,
             CLIInt: self.int_template,
             CLIEnum: self.enum_template,
-            CLICustomType: self.custom_type_template,
+            CLIChoiceType: self.choice_type_template,
+            CLICustomType: self.custom_type_template,            
         }
 
     def path_of(self,filename):
@@ -100,25 +104,42 @@ class XMLGenerator(object):
         return commands
 
     @staticmethod
-    def gather_enums(contexts):
-        enums = defaultdict(list)
+    def gather_type(contexts,t):
+        types = defaultdict(list)
         for context in contexts:
             for command in contexts[context]:
                 for element in command.elements + command.params:
                     if type(element) == CLICommandParam:
-                        if type(element.type) == CLIEnum:
-                            enums[element.type].append(element)
+                        if type(element.type) == t:
+                            types[element.type].append(element)
+        return types
+        
+    @staticmethod
+    def gather_enums(contexts):
+        enums = XMLGenerator.gather_type(contexts,CLIEnum)
 
         names = name_generator('enum')
         for enum in enums:
             if enum.name is None:
                 enum.name = names.next()
             for param in enums[enum]:
-                print param
                 param.type = enum
 
         return enums
+        
+    @staticmethod
+    def gather_choice_types(contexts):
+        choice_types = XMLGenerator.gather_type(contexts,CLIChoiceType)
 
+        names = name_generator('choice_type')
+        for choice_type in choice_types:
+            if choice_type.name is None:
+                choice_type.name = names.next()
+            for param in choice_types[choice_type]:
+                param.type = choice_type
+
+        return choice_types
+        
     @staticmethod
     def filter_invalid_commands(commands):
         def filter_callback(command):
@@ -132,8 +153,10 @@ class XMLGenerator(object):
 
     def generate(self,contexts):
         enums = self.gather_enums(contexts)
+        choice_types = self.gather_choice_types(contexts)
         commands = self.gather_commands(contexts)
-        print commands      
+        for command in commands:
+            print commands      
 
         for command in commands:
             self.command_template.stream(**{
@@ -163,6 +186,13 @@ class XMLGenerator(object):
                 'module': self.module,
                 'enums': enums
             }).dump(self.path_of('enums.xml'))
+            
+        if choice_types:
+            self.choice_type_definitions_template.stream(**{
+                'module': self.module,
+                'choice_types': choice_types,
+                'template_for': self.template_for,
+            }).dump(self.path_of('choice_types.xml'))
 
         self.features_template.stream(**{
             'feature': self.feature,
@@ -369,8 +399,17 @@ class CLIEnum(object):
     def valid(self):
         return True,None
 
+    def __eq__(self, other):
+        if isinstance(other, CLIEnum):
+            if self.name != other.name:
+                return False
+            if self.members != other.members:
+                return False
+            return True
+        return False
+        
     def __hash__(self):
-        return hash('|'.join(self.members))
+        return hash(self.name + '|'.join(str(self.members)))
 
     def __str__(self):
         return 'Enum(%s:%s)' % (self.name or '?',
@@ -413,22 +452,24 @@ class CLIInt(object):
     __repr__ = __str__
 
 class CLICustomType(object):
+    inttostr = 'IntToStr(%s)'
     tostring = '%s.toString()'
     free = '%s.free'
 
     known_types = {
-        'Integer':           ('integer',   "0",                 None, None),
-        'SignedInteger':     ('integer',   "0",                 None, None),
-        'String':            ('string',    "''",                None, None),
-        'IpV6address':       ('TInetAddr', "TInetAddr.Create()",free, tostring),
-        'IpAddress':         ('TInetAddr', "TInetAddr.Create()",free, tostring),
-        'VlanTag':           ('TVlanList', "TVlanList.Create()",free, tostring),
-        'VlanRangeAll':      ('TVlanList', "TVlanList.Create()",free, tostring),
-        'VlanRangeAll2':     ('TVlanList', "TVlanList.Create()",free, tostring),
-        'ciscoVlanRange':    ('TVlanList', "TVlanList.Create()",free, tostring),
-        'ciscoPortList':     ('TPortSet',  "TPortSet.Create()", free, tostring),
-        'ciscoPort':         ('TPortSet',  "TPortSet.Create()", free, tostring),
-        'ciscoPortVlanlist': ('TPortSet',  "TPortSet.Create()", free, tostring),
+        'Integer':              ('integer',   "0",                 None, inttostr),
+        'SignedInteger':        ('integer',   "0",                 None, inttostr),
+        'String':               ('string',    "''",                None, inttostr),
+        'IpV6address':          ('TInetAddr', "TInetAddr.Create()",free, tostring),
+        'IpAddress':            ('TInetAddr', "TInetAddr.Create()",free, tostring),
+        'VlanTag':              ('TVlanList', "TVlanList.Create()",free, tostring),
+        'VlanRangeAll':         ('TVlanList', "TVlanList.Create()",free, tostring),
+        'VlanRangeAll2':        ('TVlanList', "TVlanList.Create()",free, tostring),
+        'ciscoVlanRange':       ('TVlanList', "TVlanList.Create()",free, tostring),
+        'ciscoPortList':        ('TPortSet',  "TPortSet.Create()", free, tostring),
+        'ciscoPort':            ('integer',   "0",                 None, inttostr),
+        'ciscoPortVlanlist':    ('TPortSet',  "TPortSet.Create()", free, tostring),
+        'ciscoPortChannelVlan': ('integer',   "0",                 None, inttostr),
     }
 
     def __init__(self,name):
@@ -450,6 +491,51 @@ class CLICustomType(object):
 
     def __str__(self):
         return 'Type(%s)' % (self.name,)
+    __repr__ = __str__
+    
+class CLIChoiceType(object):    
+    def __init__(self,name,types):
+        self.name = name
+        self.types = types
+    
+    @property
+    def delphiscript_type(self):
+        return self.types[0].delphiscript_type
+        
+    @property
+    def delphiscript_default_value(self):
+        return self.types[0].delphiscript_default_value
+        
+    @property
+    def delphiscript_free_format(self):
+        return self.types[0].delphiscript_free_format
+        
+    @property
+    def delphiscript_tostring_format(self):
+        return self.types[0].delphiscript_tostring_format
+        
+    @property
+    def valid(self):
+        for t in self.types:
+            valid,reason = t.valid
+            if not valid:
+                return valid,reason
+        return True,None
+        
+    def __eq__(self, other):
+        if isinstance(other, CLIChoiceType):
+            if self.name != other.name:
+                return False
+            if str(self.types) != str(other.types):
+                return False
+            return True
+        return False
+
+    def __hash__(self):
+        return hash(str(self))
+        
+    def __str__(self):
+        return 'ChoiceType(%s,%s)' % (self.name,','.join(str(t) for t in self.types))
     __repr__ = __str__
 
 class CLIDelimiter(object):

@@ -86,6 +86,8 @@ def parse_into_cli(s):
     [Command(:15):([]:[ParamK(use)(it_param:Enum(it:a|b|c))])]
     >>> parse_into_cli('$state_enum=[enable|disable]; config dhcpv6_server ipif <address IpV6address> state $state_enum')
     [Command(config_dhcpv6_server_ipif_state:15):([Node(config), Node(dhcpv6_server), Node(ipif), Param(address:Type(IpV6address)), Node(state)]:[Param(state_enum_param:Enum(state_enum:enable|disable))])]
+    >>> parse_into_cli('l2tp redirect [vlan <vlan_id 1-4095>] [src-addr <src_addr IpV6address>] [session-id <session_id 1-4294967295>] [port <ifIndex ciscoPort>]')
+    [Command(l2tp_redirect:15):([Node(l2tp), Node(redirect)]:[ParamK(vlan)(vlan_id:Int(1-4095)), ParamK(src-addr)(src_addr:Type(IpV6address)), ParamK(session-id)(session_id:Int(1-4294967295)), ParamK(port)(ifIndex:Type(ciscoPort))])]
     '''
     program,errors = parse(s)
 

@@ -18,7 +18,7 @@ config dhcpv6 pool excluded_address $pool_name [add $params | delete [$params|al
 config dhcpv6 pool manual_binding $pool_name [[add <address IpV6address>] [client_duid <duid 28>] | delete [<address IpV6address> | all]]
 
 $state_enum=[enable|disable];
-config dhcpv6_server ipif [<address IpV6address> | all] state $state_enum
+config dhcpv6_server state $state_enum [[ipif <ipif ciscoPortChannelVlan>]|all]
 
 
 !context EXEC
@@ -26,7 +26,7 @@ show dhcpv6 pool {$pool_name}
 show dhcpv6 manual_binding {$pool_name}
 show dhcpv6 binding {$pool_name}
 clear dhcpv6 binding {$pool_name}
-show dhcpv6_server {ipif <ipif_name 12>}
+show dhcpv6_server {ipif <ipif ciscoPortChannelVlan>}
 show dhcpv6 excluded_address {$pool_name}
 
 !xml out

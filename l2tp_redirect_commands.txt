@@ -1,0 +1,12 @@
+!set module=l2tp_redirect prefix=xml\commands\l2tp_redirect\ feature=L2TP_redirect
+
+$src_addr_type=[<src_addr IpAddress>|<src_addr IpV6address>];
+
+!context config (config)
+l2tp redirect [vlan <vlan_id 1-4095>] [port <l2tpIfIndex ciscoPort>] {src-addr $src_addr_type} {session-id <session_id 1-4294967295>} {set-vlan <set_vlan_id 1-4095>}
+clear l2tp redirect
+
+!context EXEC
+show l2tp redirect {vlan <vlan_id 1-4095>} {src-addr $src_addr_type} {port <l2tpIfIndex ciscoPort>} {set-vlan <set_vlan_id 1-4095>} {session-id <session_id 1-4294967295>}
+
+!xml out
